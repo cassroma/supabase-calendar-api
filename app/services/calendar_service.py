@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,6 +16,17 @@ from app.schemas.calendar import AppointmentCreate, AppointmentReschedule
 
 TZ = ZoneInfo(settings.app_timezone)
 VALID_STATUSES = {"scheduled", "rescheduled"}
+
+async def list_professionals(db: AsyncSession):
+    result = await db.execute(
+        select(Professional).where(Professional.is_active.is_(True)).order_by(Professional.display_name.asc())
+    )
+    return result.scalars().all()
+
+
+async def list_service_names(db: AsyncSession):
+    result = await db.execute(select(Service).where(Service.is_active.is_(True)).order_by(Service.name.asc()))
+    return result.scalars().all()
 
 
 async def list_services(db: AsyncSession):
@@ -187,3 +198,45 @@ async def cancel_appointment(db: AsyncSession, appointment_id):
     await db.commit()
     await db.refresh(appointment)
     return appointment
+
+
+async def get_availability_by_service_date(db: AsyncSession, service_name: str, target_date):
+    normalized_name = service_name.strip().lower()
+    result = await db.execute(
+        select(Service, Professional)
+        .join(Professional, Professional.id == Service.professional_id)
+        .where(
+            func.lower(Service.name) == normalized_name,
+            Service.is_active.is_(True),
+            Professional.is_active.is_(True),
+        )
+        .order_by(Professional.display_name.asc())
+    )
+
+    rows = result.all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Serviço não encontrado")
+
+    professionals = []
+    total_slots = 0
+
+    for service, professional in rows:
+        slots = await list_day_slots(db, professional.id, service.id, target_date)
+        total_slots += len(slots)
+        professionals.append(
+            {
+                "professional_id": str(professional.id),
+                "display_name": professional.display_name,
+                "service_id": str(service.id),
+                "service_name": service.name,
+                "slots": slots,
+                "total": len(slots),
+            }
+        )
+
+    return {
+        "service_name": rows[0][0].name,
+        "date": target_date.isoformat(),
+        "total": total_slots,
+        "professionals": professionals,
+    }

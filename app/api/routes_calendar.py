@@ -18,7 +18,16 @@ from app.schemas.calendar import (
     ServiceCreate,
     WeeklyAvailabilityCreate,
 )
-from app.services.calendar_service import cancel_appointment, create_appointment, list_day_slots, list_services, reschedule_appointment
+from app.services.calendar_service import (
+    cancel_appointment,
+    create_appointment,
+    get_availability_by_service_date,
+    list_day_slots,
+    list_professionals,
+    list_service_names,
+    list_services,
+    reschedule_appointment,
+)
 
 router = APIRouter(prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_api_key)])
 
@@ -39,6 +48,24 @@ async def create_service(payload: ServiceCreate, db: AsyncSession = Depends(get_
     await db.commit()
     await db.refresh(item)
     return item
+
+
+@router.get("/professionals/list", operation_id="getListProfessionals")
+async def get_list_professionals(db: AsyncSession = Depends(get_db)):
+    professionals = await list_professionals(db)
+    return {
+        "total": len(professionals),
+        "professionals": [p.display_name for p in professionals],
+    }
+
+
+@router.get("/services/list", operation_id="getListServices")
+async def get_list_services(db: AsyncSession = Depends(get_db)):
+    services = await list_service_names(db)
+    return {
+        "total": len(services),
+        "services": [s.name for s in services],
+    }
 
 
 @router.get("/services")
@@ -69,6 +96,15 @@ async def create_weekly_availability(payload: WeeklyAvailabilityCreate, db: Asyn
         raise HTTPException(status_code=409, detail="Faixa semanal já cadastrada") from exc
     await db.refresh(item)
     return item
+
+
+@router.get("/availability/by-service-date", operation_id="getAvailabilityByServiceDate")
+async def get_availability_by_service_date_route(
+    service_name: str = Query(..., description="Nome do serviço"),
+    target_date: date = Query(..., description="YYYY-MM-DD"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_availability_by_service_date(db, service_name, target_date)
 
 
 @router.get("/availability")
