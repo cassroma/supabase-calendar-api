@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,18 +16,6 @@ from app.schemas.calendar import AppointmentCreate, AppointmentReschedule
 
 TZ = ZoneInfo(settings.app_timezone)
 VALID_STATUSES = {"scheduled", "rescheduled"}
-
-
-async def list_professionals(db: AsyncSession):
-    result = await db.execute(
-        select(Professional).where(Professional.is_active.is_(True)).order_by(Professional.display_name.asc())
-    )
-    return result.scalars().all()
-
-
-async def list_service_names(db: AsyncSession):
-    result = await db.execute(select(Service).where(Service.is_active.is_(True)).order_by(Service.name.asc()))
-    return result.scalars().all()
 
 
 async def list_services(db: AsyncSession):
@@ -102,63 +90,6 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
                         "label": cursor.strftime("%H:%M"),
                     }
                 )
-            cursor += timedelta(minutes=settings.default_slot_minutes)
-
-    return slots
-
-
-async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, service_id, target_date):
-    professional = await get_professional(db, professional_id)
-    service = await get_service(db, service_id)
-
-    if service.professional_id != professional.id:
-        return []
-
-    weekday = target_date.weekday()
-    windows_result = await db.execute(
-        select(WeeklyAvailability).where(
-            WeeklyAvailability.professional_id == professional.id,
-            WeeklyAvailability.weekday == weekday,
-        )
-    )
-    windows = windows_result.scalars().all()
-
-    if not windows:
-        return []
-
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=TZ)
-    end_of_day = start_of_day + timedelta(days=1)
-
-    appointments_result = await db.execute(
-        select(Appointment).where(
-            Appointment.professional_id == professional.id,
-            Appointment.status.in_(VALID_STATUSES),
-            Appointment.starts_at < end_of_day,
-            Appointment.ends_at > start_of_day,
-        )
-    )
-    appointments = appointments_result.scalars().all()
-
-    slots = []
-    duration = timedelta(minutes=service.duration_minutes)
-
-    for window in windows:
-        cursor = datetime.combine(target_date, window.start_time).replace(tzinfo=TZ)
-        window_end = datetime.combine(target_date, window.end_time).replace(tzinfo=TZ)
-
-        while cursor + duration <= window_end:
-            candidate_end = cursor + duration
-            overlaps = any(a.starts_at < candidate_end and a.ends_at > cursor for a in appointments)
-
-            if not overlaps:
-                slots.append(
-                    {
-                        "start": cursor.isoformat(),
-                        "end": candidate_end.isoformat(),
-                        "label": cursor.strftime("%H:%M"),
-                    }
-                )
-
             cursor += timedelta(minutes=settings.default_slot_minutes)
 
     return slots
@@ -256,59 +187,3 @@ async def cancel_appointment(db: AsyncSession, appointment_id):
     await db.commit()
     await db.refresh(appointment)
     return appointment
-
-
-async def get_availability_by_service_date(db: AsyncSession, service_name: str, target_date):
-    normalized_name = service_name.strip().lower()
-
-    result = await db.execute(
-        select(Service, Professional)
-        .join(Professional, Professional.id == Service.professional_id)
-        .where(
-            func.lower(Service.name) == normalized_name,
-            Service.is_active.is_(True),
-            Professional.is_active.is_(True),
-        )
-        .order_by(Professional.display_name.asc(), Service.created_at.asc(), Service.id.asc())
-    )
-
-    rows = result.all()
-
-    if not rows:
-        raise HTTPException(status_code=404, detail="Serviço não encontrado")
-
-    professionals = []
-    total_slots = 0
-    seen = set()
-
-    for service, professional in rows:
-        key = (service.id, professional.id)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        slots = await _list_day_slots_by_service_date(
-            db,
-            professional.id,
-            service.id,
-            target_date,
-        )
-
-        total_slots += len(slots)
-        professionals.append(
-            {
-                "professional_id": str(professional.id),
-                "display_name": professional.display_name,
-                "service_id": str(service.id),
-                "service_name": service.name,
-                "slots": slots,
-                "total": len(slots),
-            }
-        )
-
-    return {
-        "service_name": rows[0][0].name,
-        "date": target_date.isoformat(),
-        "total": total_slots,
-        "professionals": professionals,
-    }
