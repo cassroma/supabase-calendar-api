@@ -17,6 +17,7 @@ from app.schemas.calendar import AppointmentCreate, AppointmentReschedule
 TZ = ZoneInfo(settings.app_timezone)
 VALID_STATUSES = {"scheduled", "rescheduled"}
 
+
 async def list_professionals(db: AsyncSession):
     result = await db.execute(
         select(Professional).where(Professional.is_active.is_(True)).order_by(Professional.display_name.asc())
@@ -52,7 +53,12 @@ async def get_professional(db: AsyncSession, professional_id):
     return professional
 
 
-async def _build_day_slots(db: AsyncSession, professional, service, target_date, apply_min_notice: bool = True):
+async def list_day_slots(db: AsyncSession, professional_id, service_id, target_date):
+    professional = await get_professional(db, professional_id)
+    service = await get_service(db, service_id)
+    if service.professional_id != professional.id:
+        raise HTTPException(status_code=400, detail="Serviço não pertence ao profissional")
+
     weekday = target_date.weekday()
     windows_result = await db.execute(
         select(WeeklyAvailability).where(
@@ -88,7 +94,7 @@ async def _build_day_slots(db: AsyncSession, professional, service, target_date,
         while cursor + duration <= window_end:
             candidate_end = cursor + duration
             overlaps = any(a.starts_at < candidate_end and a.ends_at > cursor for a in appointments)
-            if not overlaps and (not apply_min_notice or cursor >= min_notice):
+            if not overlaps and cursor >= min_notice:
                 slots.append(
                     {
                         "start": cursor.isoformat(),
@@ -101,13 +107,61 @@ async def _build_day_slots(db: AsyncSession, professional, service, target_date,
     return slots
 
 
-async def list_day_slots(db: AsyncSession, professional_id, service_id, target_date):
+async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, service_id, target_date):
     professional = await get_professional(db, professional_id)
     service = await get_service(db, service_id)
-    if service.professional_id != professional.id:
-        raise HTTPException(status_code=400, detail="Serviço não pertence ao profissional")
 
-    return await _build_day_slots(db, professional, service, target_date, apply_min_notice=True)
+    if service.professional_id != professional.id:
+        return []
+
+    weekday = target_date.weekday()
+    windows_result = await db.execute(
+        select(WeeklyAvailability).where(
+            WeeklyAvailability.professional_id == professional.id,
+            WeeklyAvailability.weekday == weekday,
+        )
+    )
+    windows = windows_result.scalars().all()
+
+    if not windows:
+        return []
+
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=TZ)
+    end_of_day = start_of_day + timedelta(days=1)
+
+    appointments_result = await db.execute(
+        select(Appointment).where(
+            Appointment.professional_id == professional.id,
+            Appointment.status.in_(VALID_STATUSES),
+            Appointment.starts_at < end_of_day,
+            Appointment.ends_at > start_of_day,
+        )
+    )
+    appointments = appointments_result.scalars().all()
+
+    slots = []
+    duration = timedelta(minutes=service.duration_minutes)
+
+    for window in windows:
+        cursor = datetime.combine(target_date, window.start_time).replace(tzinfo=TZ)
+        window_end = datetime.combine(target_date, window.end_time).replace(tzinfo=TZ)
+
+        while cursor + duration <= window_end:
+            candidate_end = cursor + duration
+            overlaps = any(a.starts_at < candidate_end and a.ends_at > cursor for a in appointments)
+
+            if not overlaps:
+                slots.append(
+                    {
+                        "start": cursor.isoformat(),
+                        "end": candidate_end.isoformat(),
+                        "label": cursor.strftime("%H:%M"),
+                    }
+                )
+
+            cursor += timedelta(minutes=settings.default_slot_minutes)
+
+    return slots
 
 
 async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
@@ -206,39 +260,40 @@ async def cancel_appointment(db: AsyncSession, appointment_id):
 
 async def get_availability_by_service_date(db: AsyncSession, service_name: str, target_date):
     normalized_name = service_name.strip().lower()
-    weekday = target_date.weekday()
 
     result = await db.execute(
         select(Service, Professional)
         .join(Professional, Professional.id == Service.professional_id)
-        .join(
-            WeeklyAvailability,
-            WeeklyAvailability.professional_id == Service.professional_id,
-        )
         .where(
             func.lower(Service.name) == normalized_name,
             Service.is_active.is_(True),
             Professional.is_active.is_(True),
-            WeeklyAvailability.weekday == weekday,
         )
         .order_by(Professional.display_name.asc(), Service.created_at.asc(), Service.id.asc())
     )
 
-    rows = result.unique().all()
+    rows = result.all()
+
     if not rows:
-        raise HTTPException(status_code=404, detail="Serviço não encontrado para a data informada")
+        raise HTTPException(status_code=404, detail="Serviço não encontrado")
 
     professionals = []
     total_slots = 0
-    seen_pairs = set()
+    seen = set()
 
     for service, professional in rows:
-        pair_key = (service.id, professional.id)
-        if pair_key in seen_pairs:
+        key = (service.id, professional.id)
+        if key in seen:
             continue
-        seen_pairs.add(pair_key)
+        seen.add(key)
 
-        slots = await _build_day_slots(db, professional, service, target_date, apply_min_notice=False)
+        slots = await _list_day_slots_by_service_date(
+            db,
+            professional.id,
+            service.id,
+            target_date,
+        )
+
         total_slots += len(slots)
         professionals.append(
             {
