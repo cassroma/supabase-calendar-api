@@ -202,25 +202,25 @@ async def cancel_appointment(db: AsyncSession, appointment_id):
 
 async def get_availability_by_service_date(db: AsyncSession, service_name: str, target_date):
     normalized_name = service_name.strip().lower()
-    result = await db.execute(
-        select(Service, Professional)
-        .join(Professional, Professional.id == Service.professional_id)
+
+    services_result = await db.execute(
+        select(Service)
         .where(
             func.lower(Service.name) == normalized_name,
             Service.is_active.is_(True),
-            Professional.is_active.is_(True),
         )
-        .order_by(Professional.display_name.asc())
+        .order_by(Service.created_at.asc(), Service.id.asc())
     )
+    services = services_result.scalars().all()
 
-    rows = result.all()
-    if not rows:
+    if not services:
         raise HTTPException(status_code=404, detail="Serviço não encontrado")
 
     professionals = []
     total_slots = 0
 
-    for service, professional in rows:
+    for service in services:
+        professional = await get_professional(db, service.professional_id)
         slots = await list_day_slots(db, professional.id, service.id, target_date)
         total_slots += len(slots)
         professionals.append(
@@ -234,8 +234,10 @@ async def get_availability_by_service_date(db: AsyncSession, service_name: str, 
             }
         )
 
+    professionals.sort(key=lambda item: item["display_name"].lower())
+
     return {
-        "service_name": rows[0][0].name,
+        "service_name": services[0].name,
         "date": target_date.isoformat(),
         "total": total_slots,
         "professionals": professionals,
