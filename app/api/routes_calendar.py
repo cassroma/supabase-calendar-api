@@ -57,18 +57,44 @@ async def create_service(payload: ServiceCreate, db: AsyncSession = Depends(get_
 @router.get("/professionals/list", operation_id="getListProfessionals")
 async def get_list_professionals(db: AsyncSession = Depends(get_db)):
     professionals = await list_professionals(db)
+    names = [p.display_name for p in professionals]
     return {
-        "total": len(professionals),
-        "professionals": [p.display_name for p in professionals],
+        "total": len(names),
+        "professionals": names,
+        "professionals_text": ", ".join(names)
     }
-
-
+ 
+ 
 @router.get("/services/list", operation_id="getListServices")
 async def get_list_services(db: AsyncSession = Depends(get_db)):
     services = await list_service_names(db)
+    names = [s.name for s in services]
+ 
     return {
-        "total": len(services),
-        "services": [s.name for s in services],
+        "total": len(names),
+        "services": names,
+        "services_text": ", ".join(names)
+    }
+
+@router.get("/availability/by-service-date/list", operation_id="getAvailabilityByServiceDate")
+async def get_availability_by_service_date_route(
+    service_name: str = Query(..., description="Nome do serviço"),
+    target_date: date = Query(..., description="YYYY-MM-DD"),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_availability_by_service_date(db, service_name, target_date)
+ 
+   
+    slots = []
+    for p in data["professionals"]:
+        for slot in p["slots"]:
+            slots.append(slot["label"])  
+ 
+    return {
+        "total": len(slots),
+        "slots": slots,
+        "slots_text": ", ".join(slots),
+        "slots_list": "\n".join([f"- {slot}" for slot in slots])
     }
 
 
