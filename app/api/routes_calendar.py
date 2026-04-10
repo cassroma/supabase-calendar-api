@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_api_key
+from app.api.deps import get_current_user, require_api_key, require_manychat_integration_token
 from app.db.session import get_db
 from app.models.professional import Professional
 from app.models.service import Service
@@ -29,7 +29,11 @@ from app.services.calendar_service import (
     reschedule_appointment,
 )
 
-router = APIRouter(prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_api_key)])
+router = APIRouter(
+    prefix="/calendar",
+    tags=["calendar"],
+    dependencies=[Depends(require_api_key), Depends(require_manychat_integration_token)],
+)
 
 
 @router.post("/professionals", dependencies=[Depends(get_current_user)])

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     api_key_header_name: str = "X-API-Key"
     api_key: str
+    manychat_integration_token: str
 
     default_slot_minutes: int = 30
     booking_min_notice_minutes: int = 30

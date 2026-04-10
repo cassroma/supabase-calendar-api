@@ -11,9 +11,24 @@ from app.models.user import User
 security = HTTPBearer(auto_error=False)
 
 
-async def require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+async def require_api_key(
+    x_api_key: str | None = Header(default=None, alias=settings.api_key_header_name)
+) -> None:
     if x_api_key != settings.api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key inválida")
+
+
+async def require_manychat_integration_token(
+    manychat_integration_token: str | None = Header(
+        default=None,
+        alias="X-Manychat-Integration-Token",
+    )
+) -> None:
+    if manychat_integration_token != settings.manychat_integration_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="ManyChat integration token inválido",
+        )
 
 
 async def get_current_user(
