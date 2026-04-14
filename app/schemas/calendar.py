@@ -45,3 +45,27 @@ class AppointmentReschedule(BaseModel):
 class AppointmentCancel(BaseModel):
     appointment_id: UUID
     reason: str | None = None
+
+
+class UserProfessionalCreate(BaseModel):
+    username: str
+    full_name: str
+    email: EmailStr | None = None
+    password: str = Field(min_length=6)
+    role: str = "professional"
+    display_name: str
+    timezone: str = "America/Sao_Paulo"
+    professional_is_active: bool = True
+    user_is_active: bool = True
+
+
+class UserProfessionalUpdate(BaseModel):
+    username: str
+    full_name: str
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=6)
+    role: str
+    display_name: str
+    timezone: str = "America/Sao_Paulo"
+    professional_is_active: bool = True
+    user_is_active: bool = True

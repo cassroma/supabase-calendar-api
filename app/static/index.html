@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGENDA ROMA</title>
+  <style>
+    :root {
+      --roma-red: #6e0d0d;
+      --roma-red-dark: #520707;
+      --bg: #f6f7fb;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: var(--roma-red);
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    header h1 { margin: 0; font-size: 24px; }
+    header p { margin: 4px 0 0; font-size: 14px; }
+    .brand { display:flex; align-items:center; gap:16px; }
+    .brand img { height: 48px; width: auto; object-fit: contain; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.05);
+      margin-bottom: 24px;
+    }
+    .hidden { display:none !important; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; }
+    label { display:block; font-size:14px; margin-bottom:6px; font-weight:700; }
+    input, select {
+      width:100%; padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: 10px; background: #fff;
+    }
+    button {
+      border: 0; background: var(--roma-red); color:#fff; padding: 10px 16px;
+      border-radius: 10px; cursor: pointer; font-weight: 700;
+    }
+    button:hover { background: var(--roma-red-dark); }
+    button.secondary { background: #991b1b; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    table { width:100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { text-align:left; padding:12px 10px; border-bottom:1px solid var(--border); font-size:14px; vertical-align: top; }
+    th { color:var(--muted); }
+    .tabs { display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 16px; }
+    .tab-btn.active { background: var(--roma-red-dark); }
+    .status { margin-top: 8px; font-size: 14px; }
+    .muted { color: var(--muted); }
+    .pill {
+      display:inline-block; padding:4px 10px; border-radius:999px; background:#fee2e2; color:#7f1d1d;
+      font-size:12px; font-weight:700;
+    }
+    .right { text-align:right; }
+    .login-wrap { max-width: 460px; margin: 48px auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>AGENDA ROMA</h1>
+      <p>Painel Web Gerenciador de Profissionais, Agenda e Horários de Atendimento</p>
+    </div>
+    <div class="brand">
+      <img id="brandLogo" src="/static/logo.png" alt="Logomarca" onerror="this.onerror=null;this.src='/static/logo-placeholder.svg';" />
+    </div>
+  </header>
+
+  <div class="container">
+    <section id="loginSection" class="card login-wrap">
+      <h2>Login</h2>
+      <div class="grid">
+        <div>
+          <label>Usuário</label>
+          <input id="loginUsername" />
+        </div>
+        <div>
+          <label>Senha</label>
+          <input id="loginPassword" type="password" />
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <button onclick="login()">Entrar</button>
+      </div>
+      <div id="loginStatus" class="status muted"></div>
+    </section>
+
+    <section id="appSection" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <div>
+            <strong id="welcomeText"></strong>
+            <div class="muted" id="profileText"></div>
+          </div>
+          <div class="row">
+            <button onclick="loadAll()">Atualizar</button>
+            <button class="secondary" onclick="logout()">Sair</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('usersTab', this)">Gerenciar Usuário/Profissional</button>
+        <button class="tab-btn" onclick="showTab('appointmentsTab', this)">Gerenciar Horários Agendados</button>
+        <button class="tab-btn" onclick="showTab('availabilitiesTab', this)">Cadastrar Horários de Atendimento</button>
+      </div>
+
+      <section id="usersTab" class="card tab-content">
+        <h2>Gerenciar Usuário/Profissional</h2>
+        <p class="muted">Disponível para perfis master e admin.</p>
+        <form id="userProfessionalForm" onsubmit="saveUserProfessional(event)">
+          <input type="hidden" id="editUserId" />
+          <div class="grid">
+            <div><label>Usuário</label><input id="upUsername" required /></div>
+            <div><label>Nome completo</label><input id="upFullName" required /></div>
+            <div><label>E-mail</label><input id="upEmail" type="email" /></div>
+            <div><label>Senha</label><input id="upPassword" type="password" /></div>
+            <div><label>Perfil</label><input id="upRole" value="professional" required /></div>
+            <div><label>Nome de exibição do profissional</label><input id="upDisplayName" required /></div>
+            <div><label>Timezone</label><input id="upTimezone" value="America/Sao_Paulo" required /></div>
+            <div><label>Usuário ativo</label><select id="upUserActive"><option value="true">Sim</option><option value="false">Não</option></select></div>
+            <div><label>Profissional ativo</label><select id="upProfessionalActive"><option value="true">Sim</option><option value="false">Não</option></select></div>
+          </div>
+          <div class="row" style="margin-top:16px;">
+            <button type="submit">Salvar</button>
+            <button type="button" onclick="resetUserProfessionalForm()">Limpar</button>
+          </div>
+        </form>
+        <div id="usersStatus" class="status muted"></div>
+        <table>
+          <thead><tr><th>Usuário</th><th>Perfil</th><th>Profissional</th><th>Status</th><th class="right">Ações</th></tr></thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </section>
+
+      <section id="appointmentsTab" class="card tab-content hidden">
+        <h2>Gerenciar Horários Agendados</h2>
+        <div class="grid">
+          <div>
+            <label>Profissional</label>
+            <select id="appointmentProfessionalFilter"></select>
+          </div>
+          <div>
+            <label>Data</label>
+            <input id="appointmentDateFilter" type="date" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:16px;">
+          <button onclick="loadAppointments()">Pesquisar</button>
+        </div>
+        <div id="appointmentsStatus" class="status muted"></div>
+        <table>
+          <thead><tr><th>Profissional</th><th>Serviço</th><th>Cliente</th><th>Início</th><th>Status</th><th class="right">Ações</th></tr></thead>
+          <tbody id="appointmentsTableBody"></tbody>
+        </table>
+      </section>
+
+      <section id="availabilitiesTab" class="card tab-content hidden">
+        <h2>Cadastrar Horários de Atendimento</h2>
+        <form onsubmit="saveAvailability(event)">
+          <div class="grid">
+            <div><label>Profissional</label><select id="availabilityProfessionalId" required></select></div>
+            <div><label>Dia da semana</label>
+              <select id="availabilityWeekday" required>
+                <option value="0">Segunda-feira</option>
+                <option value="1">Terça-feira</option>
+                <option value="2">Quarta-feira</option>
+                <option value="3">Quinta-feira</option>
+                <option value="4">Sexta-feira</option>
+                <option value="5">Sábado</option>
+                <option value="6">Domingo</option>
+              </select>
+            </div>
+            <div><label>Hora inicial</label><input id="availabilityStartTime" type="time" required /></div>
+            <div><label>Hora final</label><input id="availabilityEndTime" type="time" required /></div>
+          </div>
+          <div class="row" style="margin-top:16px;"><button type="submit">Cadastrar horário</button></div>
+        </form>
+        <div id="availabilitiesStatus" class="status muted"></div>
+        <table>
+          <thead><tr><th>Profissional</th><th>Dia</th><th>Início</th><th>Fim</th><th class="right">Ações</th></tr></thead>
+          <tbody id="availabilitiesTableBody"></tbody>
+        </table>
+      </section>
+    </section>
+  </div>
+
+  <script>
+    const api = {
+      token: localStorage.getItem('agenda_roma_token') || '',
+      me: null,
+      professionals: [],
+      userRows: []
+    };
+
+    function headers(extra = {}) {
+      return {
+        'Content-Type': 'application/json',
+        ...(api.token ? { Authorization: `Bearer ${api.token}` } : {}),
+        ...extra,
+      };
+    }
+
+    async function request(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        let message = 'Erro na operação';
+        try {
+          const data = await response.json();
+          message = data.detail || JSON.stringify(data);
+        } catch (_) {}
+        throw new Error(message);
+      }
+      if (response.status === 204) return null;
+      return response.json();
+    }
+
+    function showStatus(id, message, isError = false) {
+      const el = document.getElementById(id);
+      el.textContent = message;
+      el.style.color = isError ? '#b91c1c' : '#4b5563';
+    }
+
+    function showTab(tabId, button) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(tabId).classList.remove('hidden');
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      button.classList.add('active');
+    }
+
+    async function login() {
+      try {
+        showStatus('loginStatus', 'Autenticando...');
+        const payload = {
+          username: document.getElementById('loginUsername').value,
+          password: document.getElementById('loginPassword').value,
+        };
+        const data = await request('/auth/login', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify(payload)
+        });
+        api.token = data.access_token;
+        localStorage.setItem('agenda_roma_token', api.token);
+        await loadMe();
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('appSection').classList.remove('hidden');
+        await loadAll();
+      } catch (error) {
+        showStatus('loginStatus', error.message, true);
+      }
+    }
+
+    async function loadMe() {
+      api.me = await request('/auth/me', { headers: headers() });
+      document.getElementById('welcomeText').textContent = `Bem-vindo(a), ${api.me.full_name}`;
+      document.getElementById('profileText').textContent = `Perfil: ${api.me.role}`;
+      const canManageUsers = ['master', 'admin'].includes((api.me.role || '').toLowerCase());
+      document.getElementById('usersTab').querySelector('p').textContent = canManageUsers
+        ? 'Cadastro, edição e exclusão de usuários/profissionais.'
+        : 'Seu perfil não possui acesso a este módulo.';
+    }
+
+    function logout() {
+      localStorage.removeItem('agenda_roma_token');
+      api.token = '';
+      api.me = null;
+      location.reload();
+    }
+
+    async function loadProfessionalsOptions() {
+      const data = await request('/panel/professionals/options', { headers: headers() });
+      api.professionals = data.items || [];
+      const selects = [
+        document.getElementById('appointmentProfessionalFilter'),
+        document.getElementById('availabilityProfessionalId')
+      ];
+      selects.forEach(select => {
+        const firstOption = select.id === 'appointmentProfessionalFilter'
+          ? '<option value="">Todos</option>'
+          : '<option value="">Selecione</option>';
+        select.innerHTML = firstOption + api.professionals.map(item =>
+          `<option value="${item.professional_id}">${item.display_name}</option>`
+        ).join('');
+      });
+      if (api.me?.professional_id) {
+        document.getElementById('availabilityProfessionalId').value = api.me.professional_id;
+        document.getElementById('appointmentProfessionalFilter').value = api.me.professional_id;
+      }
+    }
+
+    async function loadUsersProfessionals() {
+      const isAllowed = ['master', 'admin'].includes((api.me.role || '').toLowerCase());
+      const body = document.getElementById('usersTableBody');
+      if (!isAllowed) {
+        body.innerHTML = '<tr><td colspan="5">Acesso restrito.</td></tr>';
+        return;
+      }
+      const data = await request('/panel/users-professionals', { headers: headers() });
+      api.userRows = data.items || [];
+      body.innerHTML = api.userRows.map((item, index) => `
+        <tr>
+          <td><strong>${item.username}</strong><br><span class="muted">${item.full_name || ''}</span></td>
+          <td><span class="pill">${item.role}</span></td>
+          <td>${item.display_name || '-'}</td>
+          <td>Usuário: ${item.user_is_active ? 'Ativo' : 'Inativo'}<br>Profissional: ${item.professional_is_active ? 'Ativo' : 'Inativo'}</td>
+          <td class="right">
+            <button onclick="editUserProfessionalByIndex(${index})">Editar</button>
+            <button onclick="deleteUserProfessional('${item.user_id}')">Excluir</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">Nenhum registro encontrado.</td></tr>';
+    }
+
+    function editUserProfessionalByIndex(index) {
+      const item = api.userRows[index];
+      document.getElementById('editUserId').value = item.user_id;
+      document.getElementById('upUsername').value = item.username || '';
+      document.getElementById('upFullName').value = item.full_name || '';
+      document.getElementById('upEmail').value = item.email || '';
+      document.getElementById('upPassword').value = '';
+      document.getElementById('upRole').value = item.role || 'professional';
+      document.getElementById('upDisplayName').value = item.display_name || '';
+      document.getElementById('upTimezone').value = item.timezone || 'America/Sao_Paulo';
+      document.getElementById('upUserActive').value = String(item.user_is_active);
+      document.getElementById('upProfessionalActive').value = String(item.professional_is_active);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetUserProfessionalForm() {
+      document.getElementById('editUserId').value = '';
+      document.getElementById('userProfessionalForm').reset();
+      document.getElementById('upRole').value = 'professional';
+      document.getElementById('upTimezone').value = 'America/Sao_Paulo';
+      document.getElementById('upUserActive').value = 'true';
+      document.getElementById('upProfessionalActive').value = 'true';
+    }
+
+    async function saveUserProfessional(event) {
+      event.preventDefault();
+      try {
+        const userId = document.getElementById('editUserId').value;
+        const payload = {
+          username: document.getElementById('upUsername').value,
+          full_name: document.getElementById('upFullName').value,
+          email: document.getElementById('upEmail').value || null,
+          password: document.getElementById('upPassword').value || null,
+          role: document.getElementById('upRole').value,
+          display_name: document.getElementById('upDisplayName').value,
+          timezone: document.getElementById('upTimezone').value,
+          user_is_active: document.getElementById('upUserActive').value === 'true',
+          professional_is_active: document.getElementById('upProfessionalActive').value === 'true',
+        };
+        const method = userId ? 'PUT' : 'POST';
+        const url = userId ? `/panel/users-professionals/${userId}` : '/panel/users-professionals';
+        if (!userId && !payload.password) {
+          throw new Error('Senha é obrigatória no cadastro.');
+        }
+        await request(url, { method, headers: headers(), body: JSON.stringify(payload) });
+        showStatus('usersStatus', userId ? 'Cadastro atualizado com sucesso.' : 'Cadastro criado com sucesso.');
+        resetUserProfessionalForm();
+        await loadUsersProfessionals();
+      } catch (error) {
+        showStatus('usersStatus', error.message, true);
+      }
+    }
+
+    async function deleteUserProfessional(userId) {
+      if (!confirm('Deseja realmente excluir este usuário/profissional?')) return;
+      try {
+        await request(`/panel/users-professionals/${userId}`, { method: 'DELETE', headers: headers() });
+        showStatus('usersStatus', 'Cadastro excluído com sucesso.');
+        await loadUsersProfessionals();
+      } catch (error) {
+        showStatus('usersStatus', error.message, true);
+      }
+    }
+
+    async function loadAppointments() {
+      try {
+        const params = new URLSearchParams();
+        const professionalId = document.getElementById('appointmentProfessionalFilter').value;
+        const targetDate = document.getElementById('appointmentDateFilter').value;
+        if (professionalId) params.append('professional_id', professionalId);
+        if (targetDate) params.append('target_date', targetDate);
+        const data = await request(`/panel/appointments?${params.toString()}`, { headers: headers() });
+        document.getElementById('appointmentsTableBody').innerHTML = (data.items || []).map(item => `
+          <tr>
+            <td>${item.professional_name}</td>
+            <td>${item.service_name}</td>
+            <td><strong>${item.customer_name}</strong><br><span class="muted">${item.customer_phone || ''}</span></td>
+            <td>${new Date(item.starts_at).toLocaleString('pt-BR')}</td>
+            <td><span class="pill">${item.status}</span></td>
+            <td class="right"><button onclick="cancelAppointment('${item.appointment_id}')">Cancelar</button></td>
+          </tr>
+        `).join('') || '<tr><td colspan="6">Nenhum agendamento encontrado.</td></tr>';
+        showStatus('appointmentsStatus', `${data.total || 0} agendamento(s) carregado(s).`);
+      } catch (error) {
+        showStatus('appointmentsStatus', error.message, true);
+      }
+    }
+
+    async function cancelAppointment(appointmentId) {
+      if (!confirm('Deseja cancelar este agendamento?')) return;
+      try {
+        await request(`/panel/appointments/${appointmentId}`, { method: 'DELETE', headers: headers() });
+        showStatus('appointmentsStatus', 'Agendamento cancelado com sucesso.');
+        await loadAppointments();
+      } catch (error) {
+        showStatus('appointmentsStatus', error.message, true);
+      }
+    }
+
+    async function loadAvailabilities() {
+      try {
+        const professionalId = document.getElementById('availabilityProfessionalId').value;
+        const params = new URLSearchParams();
+        if (professionalId) params.append('professional_id', professionalId);
+        const data = await request(`/panel/availabilities?${params.toString()}`, { headers: headers() });
+        const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+        document.getElementById('availabilitiesTableBody').innerHTML = (data.items || []).map(item => `
+          <tr>
+            <td>${item.professional_name}</td>
+            <td>${weekdays[item.weekday] || item.weekday}</td>
+            <td>${item.start_time.slice(0,5)}</td>
+            <td>${item.end_time.slice(0,5)}</td>
+            <td class="right"><button onclick="deleteAvailability('${item.availability_id}')">Excluir</button></td>
+          </tr>
+        `).join('') || '<tr><td colspan="5">Nenhum horário cadastrado.</td></tr>';
+        showStatus('availabilitiesStatus', `${data.total || 0} horário(s) carregado(s).`);
+      } catch (error) {
+        showStatus('availabilitiesStatus', error.message, true);
+      }
+    }
+
+    async function saveAvailability(event) {
+      event.preventDefault();
+      try {
+        const payload = {
+          professional_id: document.getElementById('availabilityProfessionalId').value,
+          weekday: Number(document.getElementById('availabilityWeekday').value),
+          start_time: document.getElementById('availabilityStartTime').value + ':00',
+          end_time: document.getElementById('availabilityEndTime').value + ':00',
+        };
+        await request('/panel/availabilities', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify(payload)
+        });
+        showStatus('availabilitiesStatus', 'Horário de atendimento cadastrado com sucesso.');
+        await loadAvailabilities();
+      } catch (error) {
+        showStatus('availabilitiesStatus', error.message, true);
+      }
+    }
+
+    async function deleteAvailability(availabilityId) {
+      if (!confirm('Deseja excluir este horário de atendimento?')) return;
+      try {
+        await request(`/panel/availabilities/${availabilityId}`, { method: 'DELETE', headers: headers() });
+        showStatus('availabilitiesStatus', 'Horário excluído com sucesso.');
+        await loadAvailabilities();
+      } catch (error) {
+        showStatus('availabilitiesStatus', error.message, true);
+      }
+    }
+
+    async function loadAll() {
+      await loadProfessionalsOptions();
+      await Promise.allSettled([
+        loadUsersProfessionals(),
+        loadAppointments(),
+        loadAvailabilities()
+      ]);
+    }
+
+    (async function init() {
+      if (!api.token) return;
+      try {
+        await loadMe();
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('appSection').classList.remove('hidden');
+        await loadAll();
+      } catch (_) {
+        logout();
+      }
+    })();
+  </script>
+</body>
+</html>

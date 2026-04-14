@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -6,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import decode_token
 from app.db.session import get_db
+from app.models.professional import Professional
 from app.models.user import User
 
 security = HTTPBearer(auto_error=False)
@@ -49,3 +53,39 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário não encontrado")
     return user
+
+
+async def get_current_professional(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Professional | None:
+    result = await db.execute(
+        select(Professional).where(Professional.user_id == current_user.id, Professional.is_active.is_(True))
+    )
+    return result.scalar_one_or_none()
+
+
+
+def require_roles(*allowed_roles: str) -> Callable[..., Any]:
+    allowed = {role.strip().lower() for role in allowed_roles}
+
+    async def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role.lower() not in allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário sem permissão")
+        return current_user
+
+    return dependency
+
+
+async def require_same_professional_or_admin(
+    professional_id: str,
+    current_user: User = Depends(get_current_user),
+    current_professional: Professional | None = Depends(get_current_professional),
+) -> User:
+    if current_user.role.lower() in {"master", "admin"}:
+        return current_user
+
+    if current_user.role.lower() == "professional" and current_professional and str(current_professional.id) == str(professional_id):
+        return current_user
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário sem permissão para este profissional")

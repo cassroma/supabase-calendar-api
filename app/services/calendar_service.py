@@ -647,3 +647,73 @@ async def get_availability_by_service_date(db: AsyncSession, service_name: str, 
         "total": total_slots,
         "professionals": professionals,
     }
+
+
+async def get_id_service_by_name(db: AsyncSession, nameservice: str):
+    """
+    Retorna os IDs dos serviços ativos filtrando pelo nome.
+
+    Regras:
+    - busca parcial (ILIKE) para permitir flexibilidade;
+    - considera apenas serviços ativos;
+    - retorna lista de IDs em formato string.
+
+    Parâmetros:
+    - db: sessão do banco
+    - nameservice: nome (ou parte do nome) do serviço
+
+    Retorno:
+    - dict com total, lista e versões formatadas
+    """
+    result = await db.execute(
+        select(Service)
+        .where(Service.is_active.is_(True))
+        .where(Service.name.ilike(f"%{nameservice}%"))
+        .order_by(Service.name.asc())
+    )
+
+    services = result.scalars().all()
+
+    slots = [str(service.id) for service in services]
+
+    return {
+        "total": len(slots),
+        "slots": slots,
+        "slots_text": ", ".join(slots),
+        "slots_list": "\n".join([f"- {slot}" for slot in slots])
+    }
+
+
+async def get_id_professional_by_name(db: AsyncSession, nameprofessional: str):
+    """
+    Retorna os IDs dos profissionais ativos filtrando pelo nome.
+
+    Regras:
+    - busca parcial (ILIKE);
+    - considera apenas profissionais ativos;
+    - utiliza display_name.
+
+    Parâmetros:
+    - db: sessão do banco
+    - nameprofessional: nome (ou parte do nome)
+
+    Retorno:
+    - dict com total e listas formatadas
+    """
+    result = await db.execute(
+        select(Professional)
+        .where(Professional.is_active.is_(True))
+        .where(Professional.display_name.ilike(f"%{nameprofessional}%"))
+        .order_by(Professional.display_name.asc())
+    )
+
+    professionals = result.scalars().all()
+
+    slots = [str(prof.id) for prof in professionals]
+
+    return {
+        "total": len(slots),
+        "slots": slots,
+        "slots_text": ", ".join(slots),
+        "slots_list": "\n".join([f"- {slot}" for slot in slots])
+    }

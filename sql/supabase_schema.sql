@@ -6,10 +6,14 @@ create table if not exists public.users (
     full_name varchar(150) not null,
     email varchar(150) unique,
     password_hash varchar(255) not null,
+    role varchar(30) not null default 'professional',
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+alter table if exists public.users add column if not exists role varchar(30) not null default 'professional';
+create index if not exists idx_users_role on public.users(role);
 
 create table if not exists public.professionals (
     id uuid primary key default gen_random_uuid(),

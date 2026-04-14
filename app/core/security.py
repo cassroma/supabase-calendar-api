@@ -9,6 +9,16 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+ALLOWED_ROLES = {"master", "admin", "professional", "attendant"}
+
+
+def normalize_role(role: str | None) -> str:
+    normalized = (role or "professional").strip().lower()
+    if normalized not in ALLOWED_ROLES:
+        raise ValueError(f"Perfil inválido. Use um destes valores: {', '.join(sorted(ALLOWED_ROLES))}")
+    return normalized
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -19,11 +29,11 @@ def get_password_hash(password: str) -> str:
 
 
 
-def create_access_token(subject: str | Any, expires_delta: timedelta | None = None) -> str:
+def create_access_token(subject: str | Any, role: str, expires_delta: timedelta | None = None) -> str:
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {"exp": expire, "sub": str(subject), "role": normalize_role(role)}
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
