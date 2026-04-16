@@ -116,10 +116,10 @@
         </div>
       </div>
 
-      <div class="tabs">
-        <button class="tab-btn active" onclick="showTab('usersTab', this)">Gerenciar Usuário/Profissional</button>
-        <button class="tab-btn" onclick="showTab('appointmentsTab', this)">Gerenciar Horários Agendados</button>
-        <button class="tab-btn" onclick="showTab('availabilitiesTab', this)">Cadastrar Horários de Atendimento</button>
+      <div class="tabs" id="tabsMenu">
+        <button id="usersTabButton" class="tab-btn active" onclick="showTab('usersTab', this)">Gerenciar Usuário/Profissional</button>
+        <button id="appointmentsTabButton" class="tab-btn" onclick="showTab('appointmentsTab', this)">Gerenciar Horários Agendados</button>
+        <button id="availabilitiesTabButton" class="tab-btn" onclick="showTab('availabilitiesTab', this)">Cadastrar Horários de Atendimento</button>
       </div>
 
       <section id="usersTab" class="card tab-content">
@@ -238,11 +238,60 @@
       el.style.color = isError ? '#b91c1c' : '#4b5563';
     }
 
+    function hasRole(...roles) {
+      return roles.includes((api.me?.role || '').toLowerCase());
+    }
+
     function showTab(tabId, button) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      document.getElementById(tabId).classList.remove('hidden');
+      const targetTab = document.getElementById(tabId);
+      if (!targetTab || targetTab.classList.contains('hidden-access')) {
+        return;
+      }
+
+      document.querySelectorAll('.tab-content').forEach(el => {
+        if (!el.classList.contains('hidden-access')) {
+          el.classList.add('hidden');
+        }
+      });
+      targetTab.classList.remove('hidden');
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       button.classList.add('active');
+    }
+
+    function applyProfileAccess() {
+      const modules = [
+        {
+          allowed: hasRole('master', 'admin'),
+          buttonId: 'usersTabButton',
+          sectionId: 'usersTab'
+        },
+        {
+          allowed: hasRole('master', 'admin', 'attendant', 'professional'),
+          buttonId: 'appointmentsTabButton',
+          sectionId: 'appointmentsTab'
+        },
+        {
+          allowed: hasRole('master', 'admin', 'attendant', 'professional'),
+          buttonId: 'availabilitiesTabButton',
+          sectionId: 'availabilitiesTab'
+        }
+      ];
+
+      modules.forEach(({ allowed, buttonId, sectionId }) => {
+        const button = document.getElementById(buttonId);
+        const section = document.getElementById(sectionId);
+
+        button.classList.toggle('hidden', !allowed);
+        section.classList.toggle('hidden', !allowed);
+        section.classList.toggle('hidden-access', !allowed);
+      });
+
+      const firstAllowedModule = modules.find(item => item.allowed);
+      if (!firstAllowedModule) {
+        return;
+      }
+
+      showTab(firstAllowedModule.sectionId, document.getElementById(firstAllowedModule.buttonId));
     }
 
     async function login() {
@@ -272,10 +321,8 @@
       api.me = await request('/auth/me', { headers: headers() });
       document.getElementById('welcomeText').textContent = `Bem-vindo(a), ${api.me.full_name}`;
       document.getElementById('profileText').textContent = `Perfil: ${api.me.role}`;
-      const canManageUsers = ['master', 'admin'].includes((api.me.role || '').toLowerCase());
-      document.getElementById('usersTab').querySelector('p').textContent = canManageUsers
-        ? 'Cadastro, edição e exclusão de usuários/profissionais.'
-        : 'Seu perfil não possui acesso a este módulo.';
+      document.getElementById('usersTab').querySelector('p').textContent = 'Cadastro, edição e exclusão de usuários/profissionais.';
+      applyProfileAccess();
     }
 
     function logout() {
