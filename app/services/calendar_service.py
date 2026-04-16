@@ -408,6 +408,11 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
     starts_at = datetime.combine(payload.appointment_date, payload.appointment_time).replace(tzinfo=TZ)
     ends_at = starts_at + timedelta(minutes=service.duration_minutes)
 
+    # Validação: não permitir agendamento no passado
+    now = datetime.now(TZ)
+    if starts_at < now:
+        raise HTTPException(status_code=400, detail="Não é permitido agendar horários no passado.")
+
     weekday_python = payload.appointment_date.weekday()
     weekday_iso = payload.appointment_date.isoweekday()
     weekday_candidates = []
