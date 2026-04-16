@@ -679,8 +679,7 @@ async def get_id_service_by_name(db: AsyncSession, nameservice: str):
     return {
         "total": len(slots),
         "slots": slots,
-        "slots_text": ", ".join(slots),
-        "slots_list": "\n".join([f"- {slot}" for slot in slots])
+        "slots_text": ", ".join(slots)       
     }
 
 
@@ -714,6 +713,5 @@ async def get_id_professional_by_name(db: AsyncSession, nameprofessional: str):
     return {
         "total": len(slots),
         "slots": slots,
-        "slots_text": ", ".join(slots),
-        "slots_list": "\n".join([f"- {slot}" for slot in slots])
+        "slots_text": ", ".join(slots)        
     }
