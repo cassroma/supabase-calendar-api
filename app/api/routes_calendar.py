@@ -1,11 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import (
     get_current_professional,
     get_current_user,
@@ -65,10 +64,21 @@ async def _ensure_professional_access(
     if current_user.role.lower() in {"master", "admin", "attendant"}:
         return professional
 
-    if current_user.role.lower() == "professional" and current_professional and current_professional.id == professional.id:
-        return professional
+    if current_user.role.lower() == "professional":
+        allowed_professional_ids = await _list_current_user_professional_ids(db, current_user)
+        if professional.id in allowed_professional_ids:
+            return professional
 
     raise HTTPException(status_code=403, detail="Usuário sem permissão para este profissional")
+
+
+async def _list_current_user_professional_ids(db: AsyncSession, current_user: User) -> list[UUID]:
+    result = await db.execute(
+        select(Professional.id)
+        .where(Professional.user_id == current_user.id, Professional.is_active.is_(True))
+        .order_by(Professional.created_at.asc(), Professional.display_name.asc())
+    )
+    return list(result.scalars().all())
 
 
 @public_router.post("/professionals", dependencies=[Depends(require_roles("master", "admin"))])
@@ -348,75 +358,137 @@ async def panel_professionals_options(
     current_user: User = Depends(get_current_user),
     current_professional: Professional | None = Depends(get_current_professional),
 ):
-    if current_user.role.lower() == "professional":
-        if not current_professional:
-            return {"items": []}
-        return {
-            "items": [
-                {
-                    "professional_id": str(current_professional.id),
-                    "display_name": current_professional.display_name,
-                }
-            ]
-        }
+    role = (current_user.role or "").lower()
 
-    professionals = await list_professionals(db)
-    return {
-        "items": [
+    if role == "professional":
+        result = await db.execute(
+            select(Professional)
+            .where(
+                Professional.user_id == current_user.id,
+                Professional.is_active.is_(True),
+            )
+            .order_by(Professional.display_name.asc())
+        )
+        items = [
             {"professional_id": str(item.id), "display_name": item.display_name}
-            for item in professionals
+            for item in result.scalars().all()
         ]
-    }
+        return {"items": items}
+
+    result = await db.execute(
+        select(Professional)
+        .where(Professional.is_active.is_(True))
+        .order_by(Professional.display_name.asc())
+    )
+    items = [
+        {"professional_id": str(item.id), "display_name": item.display_name}
+        for item in result.scalars().all()
+        if item.display_name
+    ]
+
+    return {"items": items}
 
 
 @panel_router.get("/appointments")
 async def panel_list_appointments(
     professional_id: UUID | None = None,
     target_date: date | None = None,
+    period: str = Query("day", description="Período da consulta: day ou week"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_professional: Professional | None = Depends(get_current_professional),
 ):
-    stmt = (
-        select(Appointment, Professional, Service)
-        .join(Professional, Professional.id == Appointment.professional_id)
-        .join(Service, Service.id == Appointment.service_id)
-        .order_by(Appointment.starts_at.desc())
-    )
+    period_normalized = (period or "day").strip().lower()
+    if period_normalized not in {"day", "week"}:
+        raise HTTPException(status_code=400, detail="period deve ser 'day' ou 'week'")
 
-    if target_date:
-        start_dt = datetime.combine(target_date, datetime.min.time())
-        end_dt = datetime.combine(target_date, datetime.max.time())
-        stmt = stmt.where(Appointment.starts_at >= start_dt, Appointment.starts_at <= end_dt)
+    reference_date = target_date or date.today()
 
-    if current_user.role.lower() == "professional":
-        if not current_professional:
+    stmt = select(Appointment).order_by(Appointment.starts_at.asc())
+
+    filter_start = None
+    filter_end = None
+    week_start = None
+    week_end = None
+
+    if period_normalized == "week":
+        week_start = reference_date - timedelta(days=reference_date.weekday())
+        week_end = week_start + timedelta(days=6)
+        filter_start = datetime.combine(week_start, datetime.min.time())
+        filter_end = datetime.combine(week_end + timedelta(days=1), datetime.min.time())
+        stmt = stmt.where(Appointment.starts_at >= filter_start, Appointment.starts_at < filter_end)
+    elif target_date:
+        filter_start = datetime.combine(reference_date, datetime.min.time())
+        filter_end = datetime.combine(reference_date + timedelta(days=1), datetime.min.time())
+        stmt = stmt.where(Appointment.starts_at >= filter_start, Appointment.starts_at < filter_end)
+
+    current_role = (current_user.role or "").lower()
+    if current_role == "professional":
+        professional_ids = await _list_current_user_professional_ids(db, current_user)
+        if not professional_ids:
             return {"total": 0, "items": []}
-        stmt = stmt.where(Appointment.professional_id == current_professional.id)
+        stmt = stmt.where(Appointment.professional_id.in_(professional_ids))
     elif professional_id:
         stmt = stmt.where(Appointment.professional_id == professional_id)
 
-    result = await db.execute(stmt)
-    rows = result.all()
-    items = []
-    for appointment, professional, service in rows:
-        items.append(
-            {
-                "appointment_id": str(appointment.id),
-                "professional_id": str(professional.id),
-                "professional_name": professional.display_name,
-                "service_id": str(service.id),
-                "service_name": service.name,
-                "customer_name": appointment.customer_name,
-                "customer_phone": appointment.customer_phone,
-                "customer_email": appointment.customer_email,
-                "status": appointment.status,
-                "starts_at": appointment.starts_at.isoformat(),
-                "ends_at": appointment.ends_at.isoformat(),
-                "notes": appointment.notes,
-            }
-        )
-    return {"total": len(items), "items": items}
+    try:
+        result = await db.execute(stmt)
+        appointments = result.scalars().all()
+
+        professional_ids = list({item.professional_id for item in appointments if item.professional_id})
+        service_ids = list({item.service_id for item in appointments if item.service_id})
+
+        professionals_by_id = {}
+        services_by_id = {}
+
+        if professional_ids:
+            prof_result = await db.execute(select(Professional).where(Professional.id.in_(professional_ids)))
+            professionals_by_id = {item.id: item for item in prof_result.scalars().all()}
+
+        if service_ids:
+            svc_result = await db.execute(select(Service).where(Service.id.in_(service_ids)))
+            services_by_id = {item.id: item for item in svc_result.scalars().all()}
+
+        items = []
+        for appointment in appointments:
+            professional = professionals_by_id.get(appointment.professional_id)
+            service = services_by_id.get(appointment.service_id)
+            items.append(
+                {
+                    "appointment_id": str(appointment.id),
+                    "professional_id": str(appointment.professional_id) if appointment.professional_id else None,
+                    "professional_name": professional.display_name if professional and professional.display_name else "Profissional",
+                    "service_id": str(appointment.service_id) if appointment.service_id else None,
+                    "service_name": service.name if service and service.name else "Serviço",
+                    "customer_name": appointment.customer_name,
+                    "customer_phone": appointment.customer_phone,
+                    "customer_email": appointment.customer_email,
+                    "status": appointment.status,
+                    "starts_at": appointment.starts_at.isoformat() if appointment.starts_at else None,
+                    "ends_at": appointment.ends_at.isoformat() if appointment.ends_at else None,
+                    "notes": appointment.notes,
+                }
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Falha ao carregar agendamentos: {exc}") from exc
+
+    response = {
+        "total": len(items),
+        "period": period_normalized,
+        "reference_date": reference_date.isoformat(),
+        "items": items,
+    }
+
+    if filter_start and filter_end and period_normalized == "day":
+        response["day"] = reference_date.isoformat()
+
+    if week_start and week_end:
+        response["week_start"] = week_start.isoformat()
+        response["week_end"] = week_end.isoformat()
+
+    return response
 
 
 @panel_router.delete("/appointments/{appointment_id}")
@@ -431,8 +503,11 @@ async def panel_cancel_appointment(
     if not appointment:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
 
-    if current_user.role.lower() == "professional":
-        if not current_professional or current_professional.id != appointment.professional_id:
+    current_role = (current_user.role or "").lower()
+
+    if current_role == "professional":
+        professional_ids = await _list_current_user_professional_ids(db, current_user)
+        if appointment.professional_id not in professional_ids:
             raise HTTPException(status_code=403, detail="Usuário sem permissão para este agendamento")
 
     appointment.status = "cancelled"
@@ -447,34 +522,51 @@ async def panel_list_availabilities(
     current_user: User = Depends(get_current_user),
     current_professional: Professional | None = Depends(get_current_professional),
 ):
-    stmt = (
-        select(WeeklyAvailability, Professional)
-        .join(Professional, Professional.id == WeeklyAvailability.professional_id)
-        .order_by(Professional.display_name.asc(), WeeklyAvailability.weekday.asc(), WeeklyAvailability.start_time.asc())
+    stmt = select(WeeklyAvailability).order_by(
+        WeeklyAvailability.weekday.asc(),
+        WeeklyAvailability.start_time.asc(),
     )
 
-    if current_user.role.lower() == "professional":
-        if not current_professional:
+    current_role = (current_user.role or "").lower()
+
+    if current_role == "professional":
+        professional_ids = await _list_current_user_professional_ids(db, current_user)
+        if not professional_ids:
             return {"total": 0, "items": []}
-        stmt = stmt.where(WeeklyAvailability.professional_id == current_professional.id)
+        stmt = stmt.where(WeeklyAvailability.professional_id.in_(professional_ids))
     elif professional_id:
         stmt = stmt.where(WeeklyAvailability.professional_id == professional_id)
 
-    result = await db.execute(stmt)
-    rows = result.all()
-    items = []
-    for availability, professional in rows:
-        items.append(
-            {
-                "availability_id": str(availability.id),
-                "professional_id": str(professional.id),
-                "professional_name": professional.display_name,
-                "weekday": availability.weekday,
-                "start_time": availability.start_time.strftime("%H:%M:%S"),
-                "end_time": availability.end_time.strftime("%H:%M:%S"),
-            }
-        )
-    return {"total": len(items), "items": items}
+    try:
+        result = await db.execute(stmt)
+        availabilities = result.scalars().all()
+
+        professional_ids = list({item.professional_id for item in availabilities if item.professional_id})
+        professionals_by_id = {}
+        if professional_ids:
+            prof_result = await db.execute(select(Professional).where(Professional.id.in_(professional_ids)))
+            professionals_by_id = {item.id: item for item in prof_result.scalars().all()}
+
+        items = []
+        for availability in availabilities:
+            professional = professionals_by_id.get(availability.professional_id)
+            items.append(
+                {
+                    "availability_id": str(availability.id),
+                    "professional_id": str(availability.professional_id) if availability.professional_id else None,
+                    "professional_name": professional.display_name if professional and professional.display_name else "Profissional",
+                    "weekday": availability.weekday,
+                    "start_time": availability.start_time.strftime("%H:%M:%S") if availability.start_time else None,
+                    "end_time": availability.end_time.strftime("%H:%M:%S") if availability.end_time else None,
+                }
+            )
+
+        items.sort(key=lambda item: ((item.get("professional_name") or ""), item.get("weekday") or 0, item.get("start_time") or ""))
+        return {"total": len(items), "items": items}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Falha ao carregar horários de atendimento: {exc}") from exc
 
 
 @panel_router.post("/availabilities")

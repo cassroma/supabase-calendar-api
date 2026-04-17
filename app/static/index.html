@@ -57,6 +57,7 @@
     button:hover { background: var(--roma-red-dark); }
     button.secondary { background: #991b1b; }
     .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .toolbar-between { justify-content: space-between; }
     table { width:100%; border-collapse: collapse; margin-top: 16px; }
     th, td { text-align:left; padding:12px 10px; border-bottom:1px solid var(--border); font-size:14px; vertical-align: top; }
     th { color:var(--muted); }
@@ -68,7 +69,68 @@
       display:inline-block; padding:4px 10px; border-radius:999px; background:#fee2e2; color:#7f1d1d;
       font-size:12px; font-weight:700;
     }
+    .calendar-week-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-top: 16px;
+    }
+    .calendar-week-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(160px, 1fr));
+      gap: 12px;
+      min-width: 1120px;
+      padding-right: 12px;
+    }
+    .calendar-day-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+      min-height: 240px;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .calendar-day-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+      border-radius: 14px 14px 0 0;
+    }
+    .calendar-day-header strong,
+    .calendar-day-header span {
+      display: block;
+    }
+    .calendar-day-content {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .calendar-slot {
+      border: 1px solid #fecaca;
+      border-radius: 12px;
+      padding: 10px;
+      background: #fff5f5;
+    }
+    .calendar-slot-time {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .calendar-empty {
+      color: var(--muted);
+      font-size: 14px;
+      margin: auto 0;
+    }
     .right { text-align:right; }
+
+    @media (max-width: 1200px) {
+      .calendar-week-grid {
+        grid-template-columns: repeat(7, minmax(170px, 170px));
+        min-width: max-content;
+      }
+    }
     .login-wrap { max-width: 460px; margin: 48px auto; }
   </style>
 </head>
@@ -153,19 +215,25 @@
       <section id="appointmentsTab" class="card tab-content hidden">
         <h2>Gerenciar Horários Agendados</h2>
         <div class="grid">
-          <div>
+          <div id="appointmentProfessionalFilterContainer">
             <label>Profissional</label>
             <select id="appointmentProfessionalFilter"></select>
           </div>
           <div>
-            <label>Data</label>
+            <label>Semana de referência</label>
             <input id="appointmentDateFilter" type="date" />
           </div>
         </div>
-        <div class="row" style="margin-top:16px;">
-          <button onclick="loadAppointments()">Pesquisar</button>
-        </div>
+        <div class="row toolbar-between" style="margin-top:16px;">
+          <div class="row">
+            <button id="appointmentPrevWeekButton" type="button" onclick="changeAppointmentWeek(-7)">Semana anterior</button>
+            <button id="appointmentCurrentWeekButton" type="button" onclick="setCurrentAppointmentWeek()">Semana atual</button>
+            <button id="appointmentNextWeekButton" type="button" onclick="changeAppointmentWeek(7)">Próxima semana</button>
+          </div>
+                  </div>
         <div id="appointmentsStatus" class="status muted"></div>
+        <div id="appointmentsWeekRange" class="status muted"></div>
+        <div class="calendar-week-wrapper"><div id="appointmentsCalendarWeek" class="calendar-week-grid"></div></div>
         <table>
           <thead><tr><th>Profissional</th><th>Serviço</th><th>Cliente</th><th>Início</th><th>Status</th><th class="right">Ações</th></tr></thead>
           <tbody id="appointmentsTableBody"></tbody>
@@ -176,7 +244,7 @@
         <h2>Cadastrar Horários de Atendimento</h2>
         <form onsubmit="saveAvailability(event)">
           <div class="grid">
-            <div><label>Profissional</label><select id="availabilityProfessionalId" required></select></div>
+            <div id="availabilityProfessionalContainer"><label>Profissional</label><select id="availabilityProfessionalId" required></select></div>
             <div><label>Dia da semana</label>
               <select id="availabilityWeekday" required>
                 <option value="0">Segunda-feira</option>
@@ -220,22 +288,99 @@
 
     async function request(url, options = {}) {
       const response = await fetch(url, options);
-      if (!response.ok) {
-        let message = 'Erro na operação';
+      const rawText = await response.text();
+      const parseBody = () => {
+        if (!rawText) return null;
         try {
-          const data = await response.json();
-          message = data.detail || JSON.stringify(data);
-        } catch (_) {}
+          return JSON.parse(rawText);
+        } catch (_) {
+          return rawText;
+        }
+      };
+
+      if (!response.ok) {
+        const body = parseBody();
+        let message = 'Erro na operação';
+
+        if (body && typeof body === 'object') {
+          message = body.detail || body.message || JSON.stringify(body);
+        } else if (typeof body === 'string' && body.trim()) {
+          message = body;
+        }
+
         throw new Error(message);
       }
-      if (response.status === 204) return null;
-      return response.json();
+
+      if (response.status === 204 || !rawText) return null;
+      return parseBody();
     }
 
     function showStatus(id, message, isError = false) {
       const el = document.getElementById(id);
       el.textContent = message;
       el.style.color = isError ? '#b91c1c' : '#4b5563';
+    }
+
+    function formatDatePtBr(dateValue, options = {}) {
+      return new Date(`${dateValue}T00:00:00`).toLocaleDateString('pt-BR', options);
+    }
+
+    function setCurrentAppointmentWeek() {
+      document.getElementById('appointmentDateFilter').value = new Date().toISOString().slice(0, 10);
+      return loadAppointments();
+    }
+
+    function changeAppointmentWeek(days) {
+      const input = document.getElementById('appointmentDateFilter');
+      const baseDate = input.value ? new Date(`${input.value}T00:00:00`) : new Date();
+      baseDate.setDate(baseDate.getDate() + days);
+      input.value = baseDate.toISOString().slice(0, 10);
+      loadAppointments();
+    }
+
+    function renderWeeklyAppointments(items, weekStart) {
+      const weekdays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+      const container = document.getElementById('appointmentsCalendarWeek');
+      const safeWeekStart = weekStart || document.getElementById('appointmentDateFilter').value || new Date().toISOString().slice(0, 10);
+      const startDate = new Date(`${safeWeekStart}T00:00:00`);
+      const grouped = {};
+
+      (items || []).forEach(item => {
+        if (!item?.starts_at) return;
+        const start = new Date(item.starts_at);
+        if (Number.isNaN(start.getTime())) return;
+        const key = start.toISOString().slice(0, 10);
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
+
+      const daysHtml = [];
+      for (let index = 0; index < 7; index += 1) {
+        const currentDate = new Date(startDate);
+        currentDate.setDate(startDate.getDate() + index);
+        const dateKey = currentDate.toISOString().slice(0, 10);
+        const dayItems = (grouped[dateKey] || []).slice().sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+        daysHtml.push(`
+          <div class="calendar-day-card">
+            <div class="calendar-day-header">
+              <strong>${weekdays[currentDate.getDay()]}</strong>
+              <span>${currentDate.toLocaleDateString('pt-BR')}</span>
+            </div>
+            <div class="calendar-day-content">
+              ${dayItems.length ? dayItems.map(item => `
+                <div class="calendar-slot">
+                  <div class="calendar-slot-time">${new Date(item.starts_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - ${new Date(item.ends_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div><strong>${item.customer_name}</strong></div>
+                  <div class="muted">${item.service_name} · ${item.professional_name}</div>
+                  <div class="muted">Status: ${item.status}</div>
+                </div>
+              `).join('') : '<div class="calendar-empty">Nenhum agendamento.</div>'}
+            </div>
+          </div>
+        `);
+      }
+
+      container.innerHTML = daysHtml.join('');
     }
 
     function hasRole(...roles) {
@@ -256,6 +401,69 @@
       targetTab.classList.remove('hidden');
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       button.classList.add('active');
+    }
+
+
+    function bindAppointmentsControls() {
+      const dateInput = document.getElementById('appointmentDateFilter');
+      const professionalSelect = document.getElementById('appointmentProfessionalFilter');
+      const prevButton = document.getElementById('appointmentPrevWeekButton');
+      const currentButton = document.getElementById('appointmentCurrentWeekButton');
+      const nextButton = document.getElementById('appointmentNextWeekButton');
+
+      if (prevButton && !prevButton.dataset.bound) {
+        prevButton.dataset.bound = 'true';
+        prevButton.addEventListener('click', () => changeAppointmentWeek(-7));
+      }
+
+      if (currentButton && !currentButton.dataset.bound) {
+        currentButton.dataset.bound = 'true';
+        currentButton.addEventListener('click', () => setCurrentAppointmentWeek());
+      }
+
+      if (nextButton && !nextButton.dataset.bound) {
+        nextButton.dataset.bound = 'true';
+        nextButton.addEventListener('click', () => changeAppointmentWeek(7));
+      }
+
+
+      if (dateInput && !dateInput.dataset.bound) {
+        dateInput.dataset.bound = 'true';
+        dateInput.addEventListener('change', () => loadAppointments());
+      }
+
+      if (professionalSelect && !professionalSelect.dataset.bound) {
+        professionalSelect.dataset.bound = 'true';
+        professionalSelect.addEventListener('change', () => loadAppointments());
+      }
+    }
+
+    function applyProfessionalFieldVisibility() {
+      const isProfessional = hasRole('professional');
+      const appointmentContainer = document.getElementById('appointmentProfessionalFilterContainer');
+      const availabilityContainer = document.getElementById('availabilityProfessionalContainer');
+
+      if (appointmentContainer) {
+        appointmentContainer.classList.toggle('hidden', isProfessional);
+      }
+
+      if (availabilityContainer) {
+        availabilityContainer.classList.toggle('hidden', isProfessional);
+      }
+    }
+
+    function getSelectedAppointmentProfessionalId() {
+      if (hasRole('professional')) {
+        return api.me?.professional_id || '';
+      }
+      return document.getElementById('appointmentProfessionalFilter').value;
+    }
+
+    function getSelectedAvailabilityProfessionalId() {
+      if (hasRole('professional')) {
+        return api.me?.professional_id || '';
+      }
+      return document.getElementById('availabilityProfessionalId').value;
     }
 
     function applyProfileAccess() {
@@ -323,6 +531,7 @@
       document.getElementById('profileText').textContent = `Perfil: ${api.me.role}`;
       document.getElementById('usersTab').querySelector('p').textContent = 'Cadastro, edição e exclusão de usuários/profissionais.';
       applyProfileAccess();
+      applyProfessionalFieldVisibility();
     }
 
     function logout() {
@@ -333,23 +542,71 @@
     }
 
     async function loadProfessionalsOptions() {
-      const data = await request('/panel/professionals/options', { headers: headers() });
-      api.professionals = data.items || [];
-      const selects = [
-        document.getElementById('appointmentProfessionalFilter'),
-        document.getElementById('availabilityProfessionalId')
-      ];
-      selects.forEach(select => {
-        const firstOption = select.id === 'appointmentProfessionalFilter'
-          ? '<option value="">Todos</option>'
-          : '<option value="">Selecione</option>';
-        select.innerHTML = firstOption + api.professionals.map(item =>
-          `<option value="${item.professional_id}">${item.display_name}</option>`
-        ).join('');
+      const role = (api.me?.role || '').toLowerCase();
+      let items = [];
+
+      try {
+        const data = await request('/panel/professionals/options', { headers: headers() });
+        items = data.items || [];
+      } catch (_) {
+        items = [];
+      }
+
+      const canUseUsersFallback = ['master', 'admin'].includes(role);
+      if (!items.length && canUseUsersFallback) {
+        try {
+          const usersData = await request('/panel/users-professionals', { headers: headers() });
+          items = (usersData.items || [])
+            .filter(item => item.professional_id && item.display_name && item.user_is_active && item.professional_is_active)
+            .map(item => ({
+              professional_id: item.professional_id,
+              display_name: item.display_name,
+            }));
+        } catch (_) {
+          items = [];
+        }
+      }
+
+      if (!items.length && api.me?.professional_id && api.me?.professional_display_name) {
+        items = [{
+          professional_id: api.me.professional_id,
+          display_name: api.me.professional_display_name,
+        }];
+      }
+
+      const uniqueItems = [];
+      const seen = new Set();
+      items.forEach(item => {
+        if (!item?.professional_id || !item?.display_name || seen.has(item.professional_id)) return;
+        seen.add(item.professional_id);
+        uniqueItems.push(item);
       });
+
+      api.professionals = uniqueItems;
+      const appointmentSelect = document.getElementById('appointmentProfessionalFilter');
+      const availabilitySelect = document.getElementById('availabilityProfessionalId');
+
+      const isProfessional = hasRole('professional');
+      appointmentSelect.innerHTML = (isProfessional ? '' : '<option value="">Todos</option>') + api.professionals.map(item =>
+        `<option value="${item.professional_id}">${item.display_name}</option>`
+      ).join('');
+
+      availabilitySelect.innerHTML = (isProfessional ? '' : '<option value="">Selecione</option>') + api.professionals.map(item =>
+        `<option value="${item.professional_id}">${item.display_name}</option>`
+      ).join('');
+
       if (api.me?.professional_id) {
-        document.getElementById('availabilityProfessionalId').value = api.me.professional_id;
-        document.getElementById('appointmentProfessionalFilter').value = api.me.professional_id;
+        if ([...availabilitySelect.options].some(option => option.value === api.me.professional_id)) {
+          availabilitySelect.value = api.me.professional_id;
+        }
+        if ([...appointmentSelect.options].some(option => option.value === api.me.professional_id)) {
+          appointmentSelect.value = api.me.professional_id;
+        }
+      }
+
+      if (!api.professionals.length) {
+        showStatus('appointmentsStatus', 'Nenhum profissional ativo encontrado para seleção.', true);
+        showStatus('availabilitiesStatus', 'Nenhum profissional ativo encontrado para seleção.', true);
       }
     }
 
@@ -443,11 +700,16 @@
     async function loadAppointments() {
       try {
         const params = new URLSearchParams();
-        const professionalId = document.getElementById('appointmentProfessionalFilter').value;
+        const professionalId = getSelectedAppointmentProfessionalId();
         const targetDate = document.getElementById('appointmentDateFilter').value;
         if (professionalId) params.append('professional_id', professionalId);
         if (targetDate) params.append('target_date', targetDate);
+        params.append('period', 'week');
         const data = await request(`/panel/appointments?${params.toString()}`, { headers: headers() });
+        renderWeeklyAppointments(data.items || [], data.week_start || targetDate);
+        document.getElementById('appointmentsWeekRange').textContent = data.week_start && data.week_end
+          ? `Semana exibida: ${formatDatePtBr(data.week_start)} até ${formatDatePtBr(data.week_end)}`
+          : '';
         document.getElementById('appointmentsTableBody').innerHTML = (data.items || []).map(item => `
           <tr>
             <td>${item.professional_name}</td>
@@ -458,8 +720,10 @@
             <td class="right"><button onclick="cancelAppointment('${item.appointment_id}')">Cancelar</button></td>
           </tr>
         `).join('') || '<tr><td colspan="6">Nenhum agendamento encontrado.</td></tr>';
-        showStatus('appointmentsStatus', `${data.total || 0} agendamento(s) carregado(s).`);
+        showStatus('appointmentsStatus', `${data.total || 0} agendamento(s) carregado(s) na visão semanal.`);
       } catch (error) {
+        document.getElementById('appointmentsCalendarWeek').innerHTML = '';
+        document.getElementById('appointmentsWeekRange').textContent = '';
         showStatus('appointmentsStatus', error.message, true);
       }
     }
@@ -477,7 +741,7 @@
 
     async function loadAvailabilities() {
       try {
-        const professionalId = document.getElementById('availabilityProfessionalId').value;
+        const professionalId = getSelectedAvailabilityProfessionalId();
         const params = new URLSearchParams();
         if (professionalId) params.append('professional_id', professionalId);
         const data = await request(`/panel/availabilities?${params.toString()}`, { headers: headers() });
@@ -486,8 +750,8 @@
           <tr>
             <td>${item.professional_name}</td>
             <td>${weekdays[item.weekday] || item.weekday}</td>
-            <td>${item.start_time.slice(0,5)}</td>
-            <td>${item.end_time.slice(0,5)}</td>
+            <td>${(item.start_time || '').slice(0,5)}</td>
+            <td>${(item.end_time || '').slice(0,5)}</td>
             <td class="right"><button onclick="deleteAvailability('${item.availability_id}')">Excluir</button></td>
           </tr>
         `).join('') || '<tr><td colspan="5">Nenhum horário cadastrado.</td></tr>';
@@ -500,11 +764,20 @@
     async function saveAvailability(event) {
       event.preventDefault();
       try {
+        const professionalId = getSelectedAvailabilityProfessionalId();
+        const startTime = document.getElementById('availabilityStartTime').value;
+        const endTime = document.getElementById('availabilityEndTime').value;
+        if (!professionalId) {
+          throw new Error('Selecione um profissional.');
+        }
+        if (!startTime || !endTime) {
+          throw new Error('Preencha a hora inicial e a hora final.');
+        }
         const payload = {
-          professional_id: document.getElementById('availabilityProfessionalId').value,
+          professional_id: professionalId,
           weekday: Number(document.getElementById('availabilityWeekday').value),
-          start_time: document.getElementById('availabilityStartTime').value + ':00',
-          end_time: document.getElementById('availabilityEndTime').value + ':00',
+          start_time: startTime + ':00',
+          end_time: endTime + ':00',
         };
         await request('/panel/availabilities', {
           method: 'POST',
@@ -530,6 +803,7 @@
     }
 
     async function loadAll() {
+      bindAppointmentsControls();
       await loadProfessionalsOptions();
       await Promise.allSettled([
         loadUsersProfessionals(),
@@ -537,6 +811,9 @@
         loadAvailabilities()
       ]);
     }
+
+    bindAppointmentsControls();
+    document.getElementById('appointmentDateFilter').value = new Date().toISOString().slice(0, 10);
 
     (async function init() {
       if (!api.token) return;

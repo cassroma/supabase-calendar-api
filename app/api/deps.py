@@ -60,9 +60,11 @@ async def get_current_professional(
     db: AsyncSession = Depends(get_db),
 ) -> Professional | None:
     result = await db.execute(
-        select(Professional).where(Professional.user_id == current_user.id, Professional.is_active.is_(True))
+        select(Professional)
+        .where(Professional.user_id == current_user.id, Professional.is_active.is_(True))
+        .order_by(Professional.created_at.asc(), Professional.display_name.asc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 
@@ -80,12 +82,20 @@ def require_roles(*allowed_roles: str) -> Callable[..., Any]:
 async def require_same_professional_or_admin(
     professional_id: str,
     current_user: User = Depends(get_current_user),
-    current_professional: Professional | None = Depends(get_current_professional),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     if current_user.role.lower() in {"master", "admin"}:
         return current_user
 
-    if current_user.role.lower() == "professional" and current_professional and str(current_professional.id) == str(professional_id):
-        return current_user
+    if current_user.role.lower() == "professional":
+        result = await db.execute(
+            select(Professional.id).where(
+                Professional.user_id == current_user.id,
+                Professional.is_active.is_(True),
+                Professional.id == professional_id,
+            )
+        )
+        if result.scalar_one_or_none():
+            return current_user
 
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário sem permissão para este profissional")
