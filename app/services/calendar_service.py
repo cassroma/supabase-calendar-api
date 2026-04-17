@@ -269,8 +269,19 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
         db,
         professional.id,
         target_date,
-        fallback_to_any_weekday=False,
+        fallback_to_any_weekday=True,
     )
+
+    if windows:
+        unique_windows = []
+        seen_windows = set()
+        for window in windows:
+            key = (window.start_time, window.end_time)
+            if key in seen_windows:
+                continue
+            seen_windows.add(key)
+            unique_windows.append(window)
+        windows = unique_windows
 
     if not windows:
         return []
@@ -316,15 +327,15 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
 
 async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, service_id, target_date):
     """
-    Calcula os slots do endpoint by-service-date com base apenas na
-    disponibilidade semanal cadastrada para o profissional na data.
+    Calcula slots para o endpoint by-service-date.
 
-    Regras aplicadas:
-    - o serviço precisa pertencer ao profissional;
-    - a busca considera somente as janelas de weekly_availabilities que
-      correspondem ao weekday da data consultada;
-    - horários já ocupados por agendamentos ativos não são retornados;
-    - horários passados também não são retornados.
+    Regras aplicadas nesta versão:
+    - valida o vínculo do serviço com o profissional;
+    - prioriza janelas compatíveis com o weekday da data consultada;
+    - se não houver janela exata para o dia, usa como compatibilidade os horários
+      cadastrados do profissional em weekly_availabilities, sem misturar profissionais;
+    - não retorna horários passados;
+    - não aplica a regra de antecedência mínima (min_notice).
 
     Parâmetros:
     - db: sessão assíncrona do SQLAlchemy.
@@ -341,12 +352,27 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
     if service.professional_id != professional.id:
         return []
 
+    now = datetime.now(TZ)
+    if target_date < now.date():
+        return []
+
     windows = await _get_windows_for_date(
         db,
         professional.id,
         target_date,
-        fallback_to_any_weekday=False,
+        fallback_to_any_weekday=True,
     )
+
+    if windows:
+        unique_windows = []
+        seen_windows = set()
+        for window in windows:
+            key = (window.start_time, window.end_time)
+            if key in seen_windows:
+                continue
+            seen_windows.add(key)
+            unique_windows.append(window)
+        windows = unique_windows
 
     if not windows:
         return []
@@ -366,7 +392,6 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
 
     slots = []
     duration = timedelta(minutes=service.duration_minutes)
-    now = datetime.now(TZ)
 
     for window in windows:
         cursor = datetime.combine(target_date, window.start_time).replace(tzinfo=TZ)
@@ -375,8 +400,9 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
         while cursor + duration <= window_end:
             candidate_end = cursor + duration
             overlaps = any(a.starts_at < candidate_end and a.ends_at > cursor for a in appointments)
+            is_past_slot = target_date == now.date() and cursor < now
 
-            if not overlaps and cursor >= now:
+            if not overlaps and not is_past_slot:
                 slots.append(
                     {
                         "start": cursor.isoformat(),
