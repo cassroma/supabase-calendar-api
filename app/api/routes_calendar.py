@@ -34,6 +34,7 @@ from app.services.calendar_service import (
     cancel_appointment,
     create_appointment,
     get_availability_by_service_date,
+    get_appointment_id_by_phone_number,
     get_professional,
     list_day_slots,
     list_professionals,
@@ -230,6 +231,19 @@ async def cancel(payload: AppointmentCancel, db: AsyncSession = Depends(get_db))
         "status": appointment.status,
     }
 
+
+
+
+@public_router.get("/appointments/get-idappointment-by-phone", operation_id="appointmentId-by-phonenumber")
+async def appointment_id_by_phone_number(
+    phone_number: str = Query(..., description="Telefone do cliente para localizar o agendamento"),
+    db: AsyncSession = Depends(get_db),
+):
+    appointment = await get_appointment_id_by_phone_number(db, phone_number)
+    return {
+        "phone_number": phone_number,
+        "appointment_id": str(appointment.id),
+    }
 
 @panel_router.get("/users-professionals")
 async def list_users_professionals(
@@ -616,7 +630,7 @@ async def panel_delete_availability(
 
 @public_router.get(
     "/get-idservice-by-name",
-    summary="Buscar IDs de serviços pelo nome",
+    summary="Get Service Id By Name",
     description="Retorna os IDs dos serviços ativos com base no nome informado.",
 )
 async def get_idservice_by_name(
@@ -635,7 +649,7 @@ async def get_idservice_by_name(
 
 @public_router.get(
     "/get-idprofessional-by-name",
-    summary="Buscar IDs de profissionais pelo nome",
+    summary="Get Professional Id By Name",
     description="Retorna os IDs dos profissionais ativos com base no nome informado.",
 )
 async def get_idprofessional_by_name(

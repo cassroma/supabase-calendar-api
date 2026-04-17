@@ -36,6 +36,10 @@ TZ = ZoneInfo(settings.app_timezone)
 VALID_STATUSES = {"scheduled", "rescheduled"}
 
 
+def _normalize_phone_number(phone_number: str) -> str:
+    return "".join(character for character in phone_number if character.isdigit())
+
+
 async def list_professionals(db: AsyncSession):
     """
     Retorna todos os profissionais ativos ordenados por nome de exibição.
@@ -653,6 +657,30 @@ async def get_availability_by_service_date(db: AsyncSession, service_name: str, 
         "professionals": professionals,
     }
 
+
+
+
+async def get_appointment_id_by_phone_number(db: AsyncSession, phone_number: str):
+    normalized_phone_number = _normalize_phone_number(phone_number)
+
+    if not normalized_phone_number:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    result = await db.execute(
+        select(Appointment)
+        .where(
+            Appointment.customer_phone.is_not(None),
+            func.regexp_replace(Appointment.customer_phone, r"[^0-9]", "", "g") == normalized_phone_number,
+        )
+        .order_by(Appointment.starts_at.desc(), Appointment.created_at.desc(), Appointment.id.desc())
+        .limit(1)
+    )
+
+    appointment = result.scalar_one_or_none()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado para o telefone informado")
+
+    return appointment
 
 async def get_id_service_by_name(db: AsyncSession, nameservice: str):
     """
