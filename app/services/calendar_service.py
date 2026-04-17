@@ -316,16 +316,15 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
 
 async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, service_id, target_date):
     """
-    Calcula slots para o endpoint by-service-date.
+    Calcula os slots do endpoint by-service-date com base apenas na
+    disponibilidade semanal cadastrada para o profissional na data.
 
-    Diferença principal em relação a list_day_slots:
-    - permite fallback para qualquer weekday cadastrado do profissional;
-    - não aplica a regra de antecedência mínima (min_notice).
-
-    Motivo:
-    O endpoint by-service-date foi ajustado para continuar retornando
-    horários em cenários onde o cadastro de weekday esteja inconsistente
-    no banco, sem alterar o comportamento padrão das demais rotas.
+    Regras aplicadas:
+    - o serviço precisa pertencer ao profissional;
+    - a busca considera somente as janelas de weekly_availabilities que
+      correspondem ao weekday da data consultada;
+    - horários já ocupados por agendamentos ativos não são retornados;
+    - horários passados também não são retornados.
 
     Parâmetros:
     - db: sessão assíncrona do SQLAlchemy.
@@ -346,7 +345,7 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
         db,
         professional.id,
         target_date,
-        fallback_to_any_weekday=True,
+        fallback_to_any_weekday=False,
     )
 
     if not windows:
@@ -367,6 +366,7 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
 
     slots = []
     duration = timedelta(minutes=service.duration_minutes)
+    now = datetime.now(TZ)
 
     for window in windows:
         cursor = datetime.combine(target_date, window.start_time).replace(tzinfo=TZ)
@@ -376,7 +376,7 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
             candidate_end = cursor + duration
             overlaps = any(a.starts_at < candidate_end and a.ends_at > cursor for a in appointments)
 
-            if not overlaps:
+            if not overlaps and cursor >= now:
                 slots.append(
                     {
                         "start": cursor.isoformat(),
