@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="220" height="64" viewBox="0 0 220 64" fill="none">
-  <rect width="220" height="64" rx="12" fill="#6E0D0D"/>
+  <rect width="220" height="64" rx="12" fill="#4467B3"/>
   <circle cx="34" cy="32" r="16" fill="#ffffff" opacity="0.95"/>
-  <path d="M26 38L34 22L42 38" stroke="#6E0D0D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M26 38L34 22L42 38" stroke="#4467B3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <text x="62" y="40" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">AGENDA ROMA</text>
 </svg>

@@ -6,8 +6,8 @@
   <title>AGENDA ROMA</title>
   <style>
     :root {
-      --roma-red: #6e0d0d;
-      --roma-red-dark: #520707;
+      --roma-red: #4467B3;
+      --roma-red-dark: #4467B3;
       --bg: #f6f7fb;
       --text: #1f2937;
       --muted: #6b7280;
@@ -55,7 +55,7 @@
       border-radius: 10px; cursor: pointer; font-weight: 700;
     }
     button:hover { background: var(--roma-red-dark); }
-    button.secondary { background: #991b1b; }
+    button.secondary { background: #4467B3; }
     .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
     .toolbar-between { justify-content: space-between; }
     table { width:100%; border-collapse: collapse; margin-top: 16px; }
@@ -66,7 +66,7 @@
     .status { margin-top: 8px; font-size: 14px; }
     .muted { color: var(--muted); }
     .pill {
-      display:inline-block; padding:4px 10px; border-radius:999px; background:#fee2e2; color:#7f1d1d;
+      display:inline-block; padding:4px 10px; border-radius:999px; background:#4467B3; color:#4467B3;
       font-size:12px; font-weight:700;
     }
     .calendar-week-wrapper {
@@ -109,14 +109,22 @@
       flex: 1;
     }
     .calendar-slot {
-      border: 1px solid #fecaca;
+      border: 1px solid #4467B3;
       border-radius: 12px;
       padding: 10px;
-      background: #fff5f5;
+      background: #4467B3;
+    }
+    .calendar-slot,
+    .calendar-slot * {
+      color: #FFFFFF;
     }
     .calendar-slot-time {
       font-weight: 700;
       margin-bottom: 6px;
+      color: #FFFFFF;
+    }
+    .calendar-slot-customer-name {
+      color: #c8f4ff;
     }
     .calendar-empty {
       color: var(--muted);
@@ -132,7 +140,12 @@
       }
     }
     .login-wrap { max-width: 460px; margin: 48px auto; }
-  </style>
+  
+    .pill {
+      color: #ffffff !important;
+    }
+    </style>
+
 </head>
 <body>
   <header>
@@ -271,6 +284,19 @@
   </div>
 
   <script>
+    
+    const STATUS_MAP = {
+      scheduled: "Agendado",
+      canceled: "Cancelado",
+      completed: "Concluído",
+      pending: "Pendente",
+      confirmed: "Confirmado"
+    };
+
+    function translateStatus(status){
+      return STATUS_MAP[status] || status;
+    }
+
     const api = {
       token: localStorage.getItem('agenda_roma_token') || '',
       me: null,
@@ -318,7 +344,7 @@
     function showStatus(id, message, isError = false) {
       const el = document.getElementById(id);
       el.textContent = message;
-      el.style.color = isError ? '#b91c1c' : '#4b5563';
+      el.style.color = isError ? '#4467B3' : '#4b5563';
     }
 
     function formatDatePtBr(dateValue, options = {}) {
@@ -370,9 +396,9 @@
               ${dayItems.length ? dayItems.map(item => `
                 <div class="calendar-slot">
                   <div class="calendar-slot-time">${new Date(item.starts_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - ${new Date(item.ends_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
-                  <div><strong>${item.customer_name}</strong></div>
+                  <div><strong class="calendar-slot-customer-name">${item.customer_name}</strong></div>
                   <div class="muted">${item.service_name} · ${item.professional_name}</div>
-                  <div class="muted">Status: ${item.status}</div>
+                  <div class="muted">Status: ${translateStatus(item.status)}</div>
                 </div>
               `).join('') : '<div class="calendar-empty">Nenhum agendamento.</div>'}
             </div>
@@ -716,7 +742,7 @@
             <td>${item.service_name}</td>
             <td><strong>${item.customer_name}</strong><br><span class="muted">${item.customer_phone || ''}</span></td>
             <td>${new Date(item.starts_at).toLocaleString('pt-BR')}</td>
-            <td><span class="pill">${item.status}</span></td>
+            <td><span class="pill">${translateStatus(item.status)}</span></td>
             <td class="right"><button onclick="cancelAppointment('${item.appointment_id}')">Cancelar</button></td>
           </tr>
         `).join('') || '<tr><td colspan="6">Nenhum agendamento encontrado.</td></tr>';
