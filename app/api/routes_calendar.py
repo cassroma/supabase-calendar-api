@@ -82,6 +82,18 @@ async def _list_current_user_professional_ids(db: AsyncSession, current_user: Us
     return list(result.scalars().all())
 
 
+async def _list_current_user_professionals(db: AsyncSession, current_user: User) -> list[Professional]:
+    result = await db.execute(
+        select(Professional)
+        .where(
+            Professional.user_id == current_user.id,
+            Professional.is_active.is_(True),
+        )
+        .order_by(Professional.created_at.asc(), Professional.display_name.asc())
+    )
+    return list(result.scalars().all())
+
+
 @public_router.post("/professionals", dependencies=[Depends(require_roles("master", "admin"))])
 async def create_professional(payload: ProfessionalCreate, db: AsyncSession = Depends(get_db)):
     item = Professional(**payload.model_dump())
@@ -112,7 +124,7 @@ async def get_list_professionals(db: AsyncSession = Depends(get_db)):
  
 
 @public_router.get("/availability/by-service-date/list", operation_id="getAvailabilityByServiceDate")
-async def get_availability_by_service_date_route(
+async def get_availability_by_service_date_list_route(
     service_name: str = Query(..., description="Nome do serviço"),
     target_date: date = Query(..., description="YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
@@ -375,17 +387,9 @@ async def panel_professionals_options(
     role = (current_user.role or "").lower()
 
     if role == "professional":
-        result = await db.execute(
-            select(Professional)
-            .where(
-                Professional.user_id == current_user.id,
-                Professional.is_active.is_(True),
-            )
-            .order_by(Professional.display_name.asc())
-        )
         items = [
             {"professional_id": str(item.id), "display_name": item.display_name}
-            for item in result.scalars().all()
+            for item in await _list_current_user_professionals(db, current_user)
         ]
         return {"items": items}
 

@@ -60,6 +60,23 @@ async def list_professionals(db: AsyncSession):
     return result.scalars().all()
 
 
+async def _list_active_services(db: AsyncSession):
+    """
+    Retorna os serviços ativos ordenados por nome.
+
+    Esta função centraliza a consulta base de serviços para evitar
+    duplicação de código nas funções públicas do módulo.
+
+    Parâmetros:
+    - db: sessão assíncrona do SQLAlchemy.
+
+    Retorno:
+    - lista de objetos Service ativos.
+    """
+    result = await db.execute(select(Service).where(Service.is_active.is_(True)).order_by(Service.name.asc()))
+    return result.scalars().all()
+
+
 async def list_service_names(db: AsyncSession):
     """
     Retorna os serviços ativos ordenados por nome.
@@ -75,8 +92,7 @@ async def list_service_names(db: AsyncSession):
     Retorno:
     - lista de objetos Service ativos.
     """
-    result = await db.execute(select(Service).where(Service.is_active.is_(True)).order_by(Service.name.asc()))
-    return result.scalars().all()
+    return await _list_active_services(db)
 
 
 async def list_services(db: AsyncSession):
@@ -93,8 +109,7 @@ async def list_services(db: AsyncSession):
     Retorno:
     - lista de objetos Service ativos.
     """
-    result = await db.execute(select(Service).where(Service.is_active.is_(True)).order_by(Service.name.asc()))
-    return result.scalars().all()
+    return await _list_active_services(db)
 
 
 async def get_service(db: AsyncSession, service_id):
