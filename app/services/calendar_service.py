@@ -301,6 +301,7 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
 
     slots = []
     duration = timedelta(minutes=service.duration_minutes)
+    slot_step = duration
     min_notice = datetime.now(TZ) + timedelta(minutes=settings.booking_min_notice_minutes)
 
     for window in windows:
@@ -320,7 +321,7 @@ async def list_day_slots(db: AsyncSession, professional_id, service_id, target_d
                     }
                 )
 
-            cursor += timedelta(minutes=settings.default_slot_minutes)
+            cursor += slot_step
 
     return slots
 
@@ -392,6 +393,7 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
 
     slots = []
     duration = timedelta(minutes=service.duration_minutes)
+    slot_step = duration
 
     for window in windows:
         cursor = datetime.combine(target_date, window.start_time).replace(tzinfo=TZ)
@@ -411,7 +413,7 @@ async def _list_day_slots_by_service_date(db: AsyncSession, professional_id, ser
                     }
                 )
 
-            cursor += timedelta(minutes=settings.default_slot_minutes)
+            cursor += slot_step
 
     return slots
 
