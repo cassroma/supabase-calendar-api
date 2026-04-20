@@ -185,7 +185,6 @@
             <div class="muted" id="profileText"></div>
           </div>
           <div class="row">
-            <button onclick="loadAll()">Atualizar</button>
             <button class="secondary" onclick="logout()">Sair</button>
           </div>
         </div>
@@ -287,6 +286,8 @@
     
     const STATUS_MAP = {
       scheduled: "Agendado",
+      rescheduled: "Reagendado",
+      cancelled: "Cancelado",
       canceled: "Cancelado",
       completed: "Concluído",
       pending: "Pendente",
@@ -462,6 +463,18 @@
         professionalSelect.dataset.bound = 'true';
         professionalSelect.addEventListener('change', () => loadAppointments());
       }
+
+      const availabilitySelect = document.getElementById('availabilityProfessionalId');
+      if (availabilitySelect && !availabilitySelect.dataset.bound) {
+        availabilitySelect.dataset.bound = 'true';
+        availabilitySelect.addEventListener('change', () => loadAvailabilities());
+      }
+
+      const availabilityWeekdaySelect = document.getElementById('availabilityWeekday');
+      if (availabilityWeekdaySelect && !availabilityWeekdaySelect.dataset.bound) {
+        availabilityWeekdaySelect.dataset.bound = 'true';
+        availabilityWeekdaySelect.addEventListener('change', () => loadAvailabilities());
+      }
     }
 
     function applyProfessionalFieldVisibility() {
@@ -490,6 +503,10 @@
         return api.me?.professional_id || '';
       }
       return document.getElementById('availabilityProfessionalId').value;
+    }
+
+    function getSelectedAvailabilityWeekday() {
+      return document.getElementById('availabilityWeekday').value;
     }
 
     function applyProfileAccess() {
@@ -768,11 +785,14 @@
     async function loadAvailabilities() {
       try {
         const professionalId = getSelectedAvailabilityProfessionalId();
+        const weekday = getSelectedAvailabilityWeekday();
         const params = new URLSearchParams();
         if (professionalId) params.append('professional_id', professionalId);
+        if (weekday !== '' && weekday !== null && weekday !== undefined) params.append('weekday', weekday);
         const data = await request(`/panel/availabilities?${params.toString()}`, { headers: headers() });
         const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-        document.getElementById('availabilitiesTableBody').innerHTML = (data.items || []).map(item => `
+        const items = data.items || [];
+        document.getElementById('availabilitiesTableBody').innerHTML = items.map(item => `
           <tr>
             <td>${item.professional_name}</td>
             <td>${weekdays[item.weekday] || item.weekday}</td>
@@ -780,8 +800,8 @@
             <td>${(item.end_time || '').slice(0,5)}</td>
             <td class="right"><button onclick="deleteAvailability('${item.availability_id}')">Excluir</button></td>
           </tr>
-        `).join('') || '<tr><td colspan="5">Nenhum horário cadastrado.</td></tr>';
-        showStatus('availabilitiesStatus', `${data.total || 0} horário(s) carregado(s).`);
+        `).join('') || '<tr><td colspan="5">Nenhum horário cadastrado para o profissional e dia selecionados.</td></tr>';
+        showStatus('availabilitiesStatus', `${data.total || 0} horário(s) carregado(s) para o filtro selecionado.`);
       } catch (error) {
         showStatus('availabilitiesStatus', error.message, true);
       }

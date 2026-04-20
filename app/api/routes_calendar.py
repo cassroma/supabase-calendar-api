@@ -528,14 +528,14 @@ async def panel_cancel_appointment(
         if appointment.professional_id not in professional_ids:
             raise HTTPException(status_code=403, detail="Usuário sem permissão para este agendamento")
 
-    appointment.status = "cancelled"
-    await db.commit()
+    await cancel_appointment(db, appointment_id)
     return {"message": "Agendamento cancelado com sucesso"}
 
 
 @panel_router.get("/availabilities")
 async def panel_list_availabilities(
     professional_id: UUID | None = None,
+    weekday: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_professional: Professional | None = Depends(get_current_professional),
@@ -554,6 +554,9 @@ async def panel_list_availabilities(
         stmt = stmt.where(WeeklyAvailability.professional_id.in_(professional_ids))
     elif professional_id:
         stmt = stmt.where(WeeklyAvailability.professional_id == professional_id)
+
+    if weekday is not None:
+        stmt = stmt.where(WeeklyAvailability.weekday == weekday)
 
     try:
         result = await db.execute(stmt)
