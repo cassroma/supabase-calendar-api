@@ -22,6 +22,7 @@ from app.models.weekly_availability import WeeklyAvailability
 from app.schemas.calendar import (
     AppointmentCancel,
     AppointmentCreate,
+    CurrentDateResponse,
     AppointmentReschedule,
     ProfessionalCreate,
     ServiceCreate,
@@ -35,6 +36,7 @@ from app.services.calendar_service import (
     create_appointment,
     get_availability_by_service_date,
     get_appointment_id_by_phone_number,
+    get_current_date_info,
     get_professional,
     list_day_slots,
     list_professionals,
@@ -155,6 +157,11 @@ async def get_list_services(db: AsyncSession = Depends(get_db)):
         "services": names,
         "services_text": ", ".join(names)
     }
+
+
+@public_router.get("/current-date", response_model=CurrentDateResponse, operation_id="getCurrentDate")
+async def get_current_date_route():
+    return get_current_date_info()
 
 
 @public_router.get("/services")

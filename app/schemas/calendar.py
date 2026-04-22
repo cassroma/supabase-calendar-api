@@ -97,6 +97,11 @@ class AppointmentCancel(BaseModel):
     reason: str | None = None
 
 
+class CurrentDateResponse(BaseModel):
+    date: str
+    weekday: str
+
+
 class UserProfessionalCreate(BaseModel):
     username: str
     full_name: str

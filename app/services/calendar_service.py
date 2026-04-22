@@ -36,6 +36,41 @@ TZ = ZoneInfo(settings.app_timezone)
 VALID_STATUSES = {"scheduled", "rescheduled"}
 
 
+WEEKDAY_MAP_PT_BR = {
+    0: "seg",
+    1: "ter",
+    2: "qua",
+    3: "qui",
+    4: "sex",
+    5: "sab",
+    6: "dom",
+}
+
+
+def get_current_date_info():
+    """
+    Retorna a data atual e o dia da semana abreviado em português.
+
+    Regras:
+    - usa o timezone oficial da aplicação configurado em settings.app_timezone;
+    - formata a data como dd/mm/yyyy;
+    - retorna o weekday abreviado no padrão: seg, ter, qua, qui, sex, sab, dom.
+
+    Retorno:
+    - dicionário no formato:
+      {
+          "date": "dd/mm/yyyy",
+          "weekday": "seg"
+      }
+    """
+    now = datetime.now(TZ)
+
+    return {
+        "date": now.strftime("%d/%m/%Y"),
+        "weekday": WEEKDAY_MAP_PT_BR[now.weekday()],
+    }
+
+
 def _normalize_phone_number(phone_number: str) -> str:
     return "".join(character for character in phone_number if character.isdigit())
 
