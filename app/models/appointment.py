@@ -23,6 +23,9 @@ class Appointment(Base):
     service_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("services.id", ondelete="RESTRICT"), index=True
     )
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
     customer_name: Mapped[str] = mapped_column(String(120))
     customer_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     customer_email: Mapped[str | None] = mapped_column(String(150), nullable=True)
@@ -37,3 +40,4 @@ class Appointment(Base):
 
     professional = relationship("Professional", back_populates="appointments")
     service = relationship("Service", back_populates="appointments")
+    patient = relationship("Patient", back_populates="appointments")

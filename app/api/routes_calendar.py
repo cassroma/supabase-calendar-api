@@ -15,6 +15,7 @@ from app.api.deps import (
 from app.core.security import get_password_hash, normalize_role
 from app.db.session import get_db
 from app.models.appointment import Appointment
+from app.models.patient import Patient
 from app.models.professional import Professional
 from app.models.service import Service
 from app.models.user import User
@@ -24,6 +25,9 @@ from app.schemas.calendar import (
     AppointmentCreate,
     CurrentDateResponse,
     AppointmentReschedule,
+    PatientCreate,
+    PatientResponse,
+    PatientUpdate,
     ProfessionalCreate,
     ServiceCreate,
     UserProfessionalCreate,
@@ -34,15 +38,20 @@ from app.services.auth_service import username_or_email_exists
 from app.services.calendar_service import (
     cancel_appointment,
     create_appointment,
+    create_patient,
     get_availability_by_service_date,
     get_appointment_id_by_phone_number,
     get_current_date_info,
+    get_patient,
+    get_patient_by_phone_number,
     get_professional,
     list_day_slots,
+    list_patients,
     list_professionals,
     list_service_names,
     list_services,
     reschedule_appointment,
+    update_patient,
     get_id_service_by_name,
     get_id_professional_by_name
 )
@@ -218,6 +227,55 @@ async def get_availability(
         "total": len(slots),
         "slots": slots,
     }
+
+
+@public_router.post("/patients", response_model=PatientResponse)
+async def create_patient_route(payload: PatientCreate, db: AsyncSession = Depends(get_db)):
+    return await create_patient(db, payload)
+
+
+@public_router.get("/patients/list")
+async def get_patients_list_route(db: AsyncSession = Depends(get_db)):
+    patients = await list_patients(db)
+    items = [
+        {
+            "id": str(patient.id),
+            "full_name": patient.full_name,
+            "phone": patient.phone,
+            "email": patient.email,
+            "notes": patient.notes,
+            "is_active": patient.is_active,
+        }
+        for patient in patients
+    ]
+    return {"total": len(items), "items": items}
+
+
+@public_router.get("/patients/by-phone")
+async def get_patient_by_phone_route(
+    phone_number: str = Query(..., description="Telefone do paciente para localizar o cadastro"),
+    db: AsyncSession = Depends(get_db),
+):
+    patient = await get_patient_by_phone_number(db, phone_number)
+    return {
+        "phone_number": phone_number,
+        "patient_id": str(patient.id),
+        "full_name": patient.full_name,
+        "phone": patient.phone,
+        "email": patient.email,
+        "notes": patient.notes,
+        "is_active": patient.is_active,
+    }
+
+
+@public_router.get("/patients/{patient_id}", response_model=PatientResponse)
+async def get_patient_route(patient_id: UUID, db: AsyncSession = Depends(get_db)):
+    return await get_patient(db, patient_id)
+
+
+@public_router.put("/patients/{patient_id}", response_model=PatientResponse)
+async def update_patient_route(patient_id: UUID, payload: PatientUpdate, db: AsyncSession = Depends(get_db)):
+    return await update_patient(db, patient_id, payload)
 
 
 @public_router.post("/appointments")

@@ -83,6 +83,32 @@ class AppointmentCreate(BaseModel):
     notes: str | None = None
 
 
+
+
+class PatientCreate(BaseModel):
+    full_name: str
+    phone: str
+    email: EmailStr | None = None
+    notes: str | None = None
+
+
+class PatientUpdate(BaseModel):
+    full_name: str
+    phone: str
+    email: EmailStr | None = None
+    notes: str | None = None
+    is_active: bool = True
+
+
+class PatientResponse(BaseModel):
+    id: UUID
+    full_name: str
+    phone: str
+    email: EmailStr | None = None
+    notes: str | None = None
+    is_active: bool
+
+
 class AppointmentReschedule(BaseModel):
     appointment_id: UUID
     new_date: date

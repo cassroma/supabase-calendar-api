@@ -46,6 +46,28 @@ create table if not exists public.weekly_availabilities (
     constraint uq_weekly_availability_slot unique (professional_id, weekday, start_time, end_time)
 );
 
+
+create table if not exists public.patients (
+    id uuid primary key default gen_random_uuid(),
+    full_name varchar(120) not null,
+    phone varchar(30) not null,
+    phone_normalized varchar(20) not null unique,
+    email varchar(150),
+    notes text,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+alter table if exists public.appointments add column if not exists patient_id uuid references public.patients(id) on delete restrict;
+alter table if exists public.patients add column if not exists notes text;
+alter table if exists public.patients add column if not exists is_active boolean not null default true;
+alter table if exists public.patients add column if not exists created_at timestamptz not null default now();
+alter table if exists public.patients add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists idx_patients_phone_normalized on public.patients(phone_normalized);
+create index if not exists idx_appointments_patient_id on public.appointments(patient_id);
+
 create table if not exists public.appointments (
     id uuid primary key default gen_random_uuid(),
     professional_id uuid not null references public.professionals(id) on delete cascade,
@@ -69,6 +91,7 @@ create index if not exists idx_services_professional_id on public.services(profe
 create index if not exists idx_weekly_professional_weekday on public.weekly_availabilities(professional_id, weekday);
 create index if not exists idx_appointments_professional_starts_at on public.appointments(professional_id, starts_at);
 create index if not exists idx_appointments_service_id on public.appointments(service_id);
+create index if not exists idx_patients_phone on public.patients(phone);
 
 create or replace function public.handle_updated_at()
 returns trigger
@@ -90,10 +113,16 @@ create trigger trg_appointments_updated_at
 before update on public.appointments
 for each row execute function public.handle_updated_at();
 
+drop trigger if exists trg_patients_updated_at on public.patients;
+create trigger trg_patients_updated_at
+before update on public.patients
+for each row execute function public.handle_updated_at();
+
 alter table public.users enable row level security;
 alter table public.professionals enable row level security;
 alter table public.services enable row level security;
 alter table public.weekly_availabilities enable row level security;
+alter table public.patients enable row level security;
 alter table public.appointments enable row level security;
 
 drop policy if exists service_role_all_users on public.users;
@@ -116,6 +145,12 @@ with check (auth.role() = 'service_role');
 
 drop policy if exists service_role_all_weekly_availabilities on public.weekly_availabilities;
 create policy service_role_all_weekly_availabilities on public.weekly_availabilities
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+drop policy if exists service_role_all_patients on public.patients;
+create policy service_role_all_patients on public.patients
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');

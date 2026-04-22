@@ -23,10 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.appointment import Appointment
+from app.models.patient import Patient
 from app.models.professional import Professional
 from app.models.service import Service
 from app.models.weekly_availability import WeeklyAvailability
-from app.schemas.calendar import AppointmentCreate, AppointmentReschedule
+from app.schemas.calendar import AppointmentCreate, AppointmentReschedule, PatientCreate, PatientUpdate
 
 # Timezone oficial da aplicação, usada para montar e comparar datas/horários.
 TZ = ZoneInfo(settings.app_timezone)
@@ -66,13 +67,153 @@ def get_current_date_info():
     now = datetime.now(TZ)
 
     return {
-        "date": now.strftime("%Y-%m-%d"),
+        "date": now.strftime("%d/%m/%Y"),
         "weekday": WEEKDAY_MAP_PT_BR[now.weekday()],
     }
 
 
 def _normalize_phone_number(phone_number: str) -> str:
     return "".join(character for character in phone_number if character.isdigit())
+
+
+
+
+async def _get_patient_by_normalized_phone(db: AsyncSession, phone_normalized: str):
+    result = await db.execute(
+        select(Patient).where(Patient.phone_normalized == phone_normalized)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_patient(db: AsyncSession, payload: PatientCreate):
+    normalized_phone_number = _normalize_phone_number(payload.phone)
+
+    if not normalized_phone_number:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    existing_patient = await _get_patient_by_normalized_phone(db, normalized_phone_number)
+    if existing_patient:
+        raise HTTPException(status_code=409, detail="Paciente já cadastrado para o telefone informado")
+
+    patient = Patient(
+        full_name=payload.full_name,
+        phone=payload.phone,
+        phone_normalized=normalized_phone_number,
+        email=payload.email,
+        notes=payload.notes,
+        is_active=True,
+    )
+    db.add(patient)
+    await db.commit()
+    await db.refresh(patient)
+    return patient
+
+
+async def list_patients(db: AsyncSession):
+    result = await db.execute(select(Patient).order_by(Patient.full_name.asc(), Patient.created_at.asc()))
+    return result.scalars().all()
+
+
+async def get_patient(db: AsyncSession, patient_id):
+    result = await db.execute(select(Patient).where(Patient.id == patient_id))
+    patient = result.scalar_one_or_none()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    return patient
+
+
+async def update_patient(db: AsyncSession, patient_id, payload: PatientUpdate):
+    patient = await get_patient(db, patient_id)
+    normalized_phone_number = _normalize_phone_number(payload.phone)
+
+    if not normalized_phone_number:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    existing_patient = await _get_patient_by_normalized_phone(db, normalized_phone_number)
+    if existing_patient and existing_patient.id != patient.id:
+        raise HTTPException(status_code=409, detail="Telefone já vinculado a outro paciente")
+
+    patient.full_name = payload.full_name
+    patient.phone = payload.phone
+    patient.phone_normalized = normalized_phone_number
+    patient.email = payload.email
+    patient.notes = payload.notes
+    patient.is_active = payload.is_active
+
+    await db.commit()
+    await db.refresh(patient)
+    return patient
+
+
+async def get_patient_by_phone_number(db: AsyncSession, phone_number: str):
+    normalized_phone_number = _normalize_phone_number(phone_number)
+
+    if not normalized_phone_number:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    patient = await _get_patient_by_normalized_phone(db, normalized_phone_number)
+    if patient:
+        return patient
+
+    fallback_result = await db.execute(
+        select(Appointment)
+        .where(
+            Appointment.customer_phone.is_not(None),
+            func.regexp_replace(Appointment.customer_phone, r"[^0-9]", "", "g") == normalized_phone_number,
+        )
+        .order_by(Appointment.starts_at.desc(), Appointment.created_at.desc(), Appointment.id.desc())
+        .limit(1)
+    )
+    fallback_appointment = fallback_result.scalar_one_or_none()
+
+    if not fallback_appointment:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado para o telefone informado")
+
+    patient = Patient(
+        full_name=fallback_appointment.customer_name,
+        phone=fallback_appointment.customer_phone or phone_number,
+        phone_normalized=normalized_phone_number,
+        email=fallback_appointment.customer_email,
+        notes=fallback_appointment.notes,
+        is_active=True,
+    )
+    db.add(patient)
+    await db.commit()
+    await db.refresh(patient)
+    return patient
+
+
+async def _get_or_create_patient_from_appointment_payload(db: AsyncSession, payload: AppointmentCreate):
+    if not payload.customer_phone:
+        return None
+
+    normalized_phone_number = _normalize_phone_number(payload.customer_phone)
+    if not normalized_phone_number:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    patient = await _get_patient_by_normalized_phone(db, normalized_phone_number)
+    if patient:
+        patient.full_name = payload.customer_name
+        patient.phone = payload.customer_phone
+        patient.email = payload.customer_email
+        if payload.notes:
+            patient.notes = payload.notes
+        if not patient.is_active:
+            patient.is_active = True
+        await db.flush()
+        return patient
+
+    patient = Patient(
+        full_name=payload.customer_name,
+        phone=payload.customer_phone,
+        phone_normalized=normalized_phone_number,
+        email=payload.customer_email,
+        notes=payload.notes,
+        is_active=True,
+    )
+    db.add(patient)
+    await db.flush()
+    return patient
 
 
 async def list_professionals(db: AsyncSession):
@@ -528,9 +669,12 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
     if conflict:
         raise HTTPException(status_code=409, detail="Conflito de horário detectado")
 
+    patient = await _get_or_create_patient_from_appointment_payload(db, payload)
+
     appointment = Appointment(
         professional_id=professional.id,
         service_id=service.id,
+        patient_id=patient.id if patient else None,
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
         customer_email=payload.customer_email,
