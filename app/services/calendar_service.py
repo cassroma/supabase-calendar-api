@@ -66,7 +66,7 @@ def get_current_date_info():
     now = datetime.now(TZ)
 
     return {
-        "date": now.strftime("%d/%m/%Y"),
+        "date": now.strftime("%Y-%m-%d"),
         "weekday": WEEKDAY_MAP_PT_BR[now.weekday()],
     }
 
