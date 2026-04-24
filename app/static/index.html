@@ -192,6 +192,7 @@
 
       <div class="tabs" id="tabsMenu">
         <button id="usersTabButton" class="tab-btn active" onclick="showTab('usersTab', this)">Gerenciar Usuário/Profissional</button>
+        <button id="servicesTabButton" class="tab-btn" onclick="showTab('servicesTab', this)">Gerenciar Serviços</button>
         <button id="appointmentsTabButton" class="tab-btn" onclick="showTab('appointmentsTab', this)">Gerenciar Horários Agendados</button>
         <button id="availabilitiesTabButton" class="tab-btn" onclick="showTab('availabilitiesTab', this)">Cadastrar Horários de Atendimento</button>
       </div>
@@ -224,6 +225,34 @@
         </table>
       </section>
 
+
+      <section id="servicesTab" class="card tab-content hidden">
+        <h2>Gerenciar Serviços</h2>
+        <p class="muted">Disponível para perfis master e admin.</p>
+        <form id="serviceForm" onsubmit="saveService(event)">
+          <input type="hidden" id="editServiceId" />
+          <div class="grid">
+            <div><label>Profissional</label><select id="serviceProfessionalId" required></select></div>
+            <div><label>Nome do serviço</label><input id="serviceName" required /></div>
+            <div><label>Duração em minutos</label><input id="serviceDuration" type="number" min="1" step="1" required /></div>
+            <div><label>Preço</label><input id="servicePrice" type="number" min="0" step="0.01" /></div>
+            <div><label>Status</label><select id="serviceActive"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
+          </div>
+          <div style="margin-top:16px;">
+            <label>Descrição</label>
+            <input id="serviceDescription" />
+          </div>
+          <div class="row" style="margin-top:16px;">
+            <button type="submit">Salvar</button>
+            <button type="button" onclick="resetServiceForm()">Limpar</button>
+          </div>
+        </form>
+        <div id="servicesStatus" class="status muted"></div>
+        <table>
+          <thead><tr><th>Serviço</th><th>Profissional</th><th>Duração</th><th>Preço</th><th>Status</th><th class="right">Ações</th></tr></thead>
+          <tbody id="servicesTableBody"></tbody>
+        </table>
+      </section>
       <section id="appointmentsTab" class="card tab-content hidden">
         <h2>Gerenciar Horários Agendados</h2>
         <div class="grid">
@@ -302,7 +331,8 @@
       token: localStorage.getItem('agenda_roma_token') || '',
       me: null,
       professionals: [],
-      userRows: []
+      userRows: [],
+      serviceRows: []
     };
 
     function headers(extra = {}) {
@@ -465,6 +495,7 @@
       }
 
       const availabilitySelect = document.getElementById('availabilityProfessionalId');
+      const serviceSelect = document.getElementById('serviceProfessionalId');
       if (availabilitySelect && !availabilitySelect.dataset.bound) {
         availabilitySelect.dataset.bound = 'true';
         availabilitySelect.addEventListener('change', () => loadAvailabilities());
@@ -515,6 +546,11 @@
           allowed: hasRole('master', 'admin'),
           buttonId: 'usersTabButton',
           sectionId: 'usersTab'
+        },
+        {
+          allowed: hasRole('master', 'admin'),
+          buttonId: 'servicesTabButton',
+          sectionId: 'servicesTab'
         },
         {
           allowed: hasRole('master', 'admin', 'attendant', 'professional'),
@@ -628,6 +664,7 @@
       api.professionals = uniqueItems;
       const appointmentSelect = document.getElementById('appointmentProfessionalFilter');
       const availabilitySelect = document.getElementById('availabilityProfessionalId');
+      const serviceSelect = document.getElementById('serviceProfessionalId');
 
       const isProfessional = hasRole('professional');
       appointmentSelect.innerHTML = (isProfessional ? '' : '<option value="">Todos</option>') + api.professionals.map(item =>
@@ -637,6 +674,12 @@
       availabilitySelect.innerHTML = (isProfessional ? '' : '<option value="">Selecione</option>') + api.professionals.map(item =>
         `<option value="${item.professional_id}">${item.display_name}</option>`
       ).join('');
+
+      if (serviceSelect) {
+        serviceSelect.innerHTML = '<option value="">Selecione</option>' + api.professionals.map(item =>
+          `<option value="${item.professional_id}">${item.display_name}</option>`
+        ).join('');
+      }
 
       if (api.me?.professional_id) {
         if ([...availabilitySelect.options].some(option => option.value === api.me.professional_id)) {
@@ -737,6 +780,95 @@
         await loadUsersProfessionals();
       } catch (error) {
         showStatus('usersStatus', error.message, true);
+      }
+    }
+
+    async function loadServices() {
+      const isAllowed = ['master', 'admin'].includes((api.me.role || '').toLowerCase());
+      const body = document.getElementById('servicesTableBody');
+      if (!isAllowed) {
+        body.innerHTML = '<tr><td colspan="6">Acesso restrito.</td></tr>';
+        return;
+      }
+
+      try {
+        const data = await request('/panel/services', { headers: headers() });
+        api.serviceRows = data.items || [];
+        body.innerHTML = api.serviceRows.map((item, index) => `
+          <tr>
+            <td><strong>${item.name}</strong><br><span class="muted">${item.description || ''}</span></td>
+            <td>${item.professional_name || '-'}</td>
+            <td>${item.duration_minutes} min</td>
+            <td>${item.price !== null && item.price !== undefined ? Number(item.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
+            <td><span class="pill">${item.is_active ? 'Ativo' : 'Inativo'}</span></td>
+            <td class="right">
+              <button onclick="editServiceByIndex(${index})">Editar</button>
+              <button onclick="deleteService('${item.service_id}')">Excluir</button>
+            </td>
+          </tr>
+        `).join('') || '<tr><td colspan="6">Nenhum serviço encontrado.</td></tr>';
+        showStatus('servicesStatus', `${data.total || 0} serviço(s) carregado(s).`);
+      } catch (error) {
+        showStatus('servicesStatus', error.message, true);
+      }
+    }
+
+    function resetServiceForm() {
+      document.getElementById('editServiceId').value = '';
+      document.getElementById('serviceForm').reset();
+      document.getElementById('serviceActive').value = 'true';
+    }
+
+    function editServiceByIndex(index) {
+      const item = api.serviceRows[index];
+      document.getElementById('editServiceId').value = item.service_id;
+      document.getElementById('serviceProfessionalId').value = item.professional_id || '';
+      document.getElementById('serviceName').value = item.name || '';
+      document.getElementById('serviceDescription').value = item.description || '';
+      document.getElementById('serviceDuration').value = item.duration_minutes || '';
+      document.getElementById('servicePrice').value = item.price !== null && item.price !== undefined ? item.price : '';
+      document.getElementById('serviceActive').value = String(item.is_active);
+      showTab('servicesTab', document.getElementById('servicesTabButton'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function saveService(event) {
+      event.preventDefault();
+      try {
+        const serviceId = document.getElementById('editServiceId').value;
+        const priceValue = document.getElementById('servicePrice').value;
+        const payload = {
+          professional_id: document.getElementById('serviceProfessionalId').value,
+          name: document.getElementById('serviceName').value,
+          description: document.getElementById('serviceDescription').value || null,
+          duration_minutes: Number(document.getElementById('serviceDuration').value),
+          price: priceValue === '' ? null : Number(priceValue),
+          is_active: document.getElementById('serviceActive').value === 'true',
+        };
+
+        if (!payload.professional_id) {
+          throw new Error('Selecione um profissional.');
+        }
+
+        const method = serviceId ? 'PUT' : 'POST';
+        const url = serviceId ? `/panel/services/${serviceId}` : '/panel/services';
+        await request(url, { method, headers: headers(), body: JSON.stringify(payload) });
+        showStatus('servicesStatus', serviceId ? 'Serviço atualizado com sucesso.' : 'Serviço cadastrado com sucesso.');
+        resetServiceForm();
+        await loadServices();
+      } catch (error) {
+        showStatus('servicesStatus', error.message, true);
+      }
+    }
+
+    async function deleteService(serviceId) {
+      if (!confirm('Deseja realmente excluir este serviço?')) return;
+      try {
+        await request(`/panel/services/${serviceId}`, { method: 'DELETE', headers: headers() });
+        showStatus('servicesStatus', 'Serviço excluído com sucesso.');
+        await loadServices();
+      } catch (error) {
+        showStatus('servicesStatus', error.message, true);
       }
     }
 
@@ -853,6 +985,7 @@
       await loadProfessionalsOptions();
       await Promise.allSettled([
         loadUsersProfessionals(),
+        loadServices(),
         loadAppointments(),
         loadAvailabilities()
       ]);

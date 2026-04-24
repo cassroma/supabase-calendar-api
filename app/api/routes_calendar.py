@@ -30,6 +30,7 @@ from app.schemas.calendar import (
     PatientUpdate,
     ProfessionalCreate,
     ServiceCreate,
+    ServiceUpdate,
     UserProfessionalCreate,
     UserProfessionalUpdate,
     WeeklyAvailabilityCreate,
@@ -470,6 +471,101 @@ async def panel_professionals_options(
     ]
 
     return {"items": items}
+
+
+@panel_router.get("/services")
+async def panel_list_services(
+    professional_id: UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("master", "admin")),
+):
+    stmt = (
+        select(Service, Professional)
+        .join(Professional, Professional.id == Service.professional_id)
+        .order_by(Professional.display_name.asc(), Service.name.asc())
+    )
+
+    if professional_id:
+        stmt = stmt.where(Service.professional_id == professional_id)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    items = []
+    for service, professional in rows:
+        items.append(
+            {
+                "service_id": str(service.id),
+                "professional_id": str(service.professional_id),
+                "professional_name": professional.display_name if professional else "Profissional",
+                "name": service.name,
+                "description": service.description,
+                "duration_minutes": service.duration_minutes,
+                "price": float(service.price) if service.price is not None else None,
+                "is_active": service.is_active,
+            }
+        )
+
+    return {"total": len(items), "items": items}
+
+
+@panel_router.post("/services")
+async def panel_create_service(
+    payload: ServiceCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("master", "admin")),
+):
+    await get_professional(db, payload.professional_id)
+
+    item = Service(**payload.model_dump())
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+
+    return {
+        "service_id": str(item.id),
+        "message": "Serviço cadastrado com sucesso",
+    }
+
+
+@panel_router.put("/services/{service_id}")
+async def panel_update_service(
+    service_id: UUID,
+    payload: ServiceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("master", "admin")),
+):
+    result = await db.execute(select(Service).where(Service.id == service_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Serviço não encontrado")
+
+    await get_professional(db, payload.professional_id)
+
+    item.professional_id = payload.professional_id
+    item.name = payload.name
+    item.description = payload.description
+    item.duration_minutes = payload.duration_minutes
+    item.price = payload.price
+    item.is_active = payload.is_active
+
+    await db.commit()
+    return {"message": "Serviço atualizado com sucesso"}
+
+
+@panel_router.delete("/services/{service_id}")
+async def panel_delete_service(
+    service_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("master", "admin")),
+):
+    result = await db.execute(select(Service).where(Service.id == service_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Serviço não encontrado")
+
+    item.is_active = False
+    await db.commit()
+    return {"message": "Serviço excluído com sucesso"}
 
 
 @panel_router.get("/appointments")

@@ -62,6 +62,15 @@ class ServiceCreate(BaseModel):
     price: float | None = None
 
 
+class ServiceUpdate(BaseModel):
+    professional_id: UUID
+    name: str
+    description: str | None = None
+    duration_minutes: int = Field(gt=0)
+    price: float | None = None
+    is_active: bool = True
+
+
 class WeeklyAvailabilityCreate(BaseModel):
     professional_id: UUID
     weekday: int = Field(ge=0, le=6)
