@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.models.appointment import Appointment
@@ -669,7 +670,32 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
     if conflict:
         raise HTTPException(status_code=409, detail="Conflito de horário detectado")
 
+    same_start_result = await db.execute(
+        select(Appointment).where(
+            Appointment.professional_id == professional.id,
+            Appointment.starts_at == starts_at,
+        )
+    )
+    same_start_appointment = same_start_result.scalar_one_or_none()
+
     patient = await _get_or_create_patient_from_appointment_payload(db, payload)
+
+    if same_start_appointment:
+        if same_start_appointment.status in VALID_STATUSES:
+            raise HTTPException(status_code=409, detail="Conflito de horário detectado")
+
+        same_start_appointment.service_id = service.id
+        same_start_appointment.patient_id = patient.id if patient else None
+        same_start_appointment.customer_name = payload.customer_name
+        same_start_appointment.customer_phone = payload.customer_phone
+        same_start_appointment.customer_email = payload.customer_email
+        same_start_appointment.notes = payload.notes
+        same_start_appointment.ends_at = ends_at
+        same_start_appointment.status = "scheduled"
+
+        await db.commit()
+        await db.refresh(same_start_appointment)
+        return same_start_appointment
 
     appointment = Appointment(
         professional_id=professional.id,
@@ -684,7 +710,12 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
         status="scheduled",
     )
     db.add(appointment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Conflito de horário detectado") from exc
+
     await db.refresh(appointment)
     return appointment
 
