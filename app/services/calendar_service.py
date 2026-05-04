@@ -652,7 +652,7 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
             WeeklyAvailability.end_time >= ends_at.timetz().replace(tzinfo=None),
         )
     )
-    availability = availability_result.scalar_one_or_none()
+    availability = availability_result.scalars().first()
 
     if not availability:
         raise HTTPException(status_code=400, detail="Horário fora da disponibilidade semanal")
@@ -665,7 +665,7 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
             Appointment.ends_at > starts_at,
         )
     )
-    conflict = conflict_result.scalar_one_or_none()
+    conflict = conflict_result.scalars().first()
 
     if conflict:
         raise HTTPException(status_code=409, detail="Conflito de horário detectado")
@@ -676,7 +676,7 @@ async def create_appointment(db: AsyncSession, payload: AppointmentCreate):
             Appointment.starts_at == starts_at,
         )
     )
-    same_start_appointment = same_start_result.scalar_one_or_none()
+    same_start_appointment = same_start_result.scalars().first()
 
     patient = await _get_or_create_patient_from_appointment_payload(db, payload)
 
@@ -767,7 +767,7 @@ async def reschedule_appointment(db: AsyncSession, payload: AppointmentReschedul
             Appointment.ends_at > starts_at,
         )
     )
-    conflict = conflict_result.scalar_one_or_none()
+    conflict = conflict_result.scalars().first()
 
     if conflict:
         raise HTTPException(status_code=409, detail="Novo horário conflita com outro agendamento")
